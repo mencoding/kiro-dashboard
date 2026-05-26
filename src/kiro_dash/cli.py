@@ -29,6 +29,7 @@ from kiro_dash.aggregator import (
     aggregate_by_model,
     aggregate_by_session,
     total_credits,
+    turns_in_last_days,
     turns_in_local_day,
 )
 from kiro_dash.models import Session
@@ -347,6 +348,30 @@ def now(refresh: float) -> None:
     except KeyboardInterrupt:
         console.print()
         return
+
+
+# ─── projects ─────────────────────────────────────────────────────────────
+
+
+@main.command()
+@click.option("--days", default=7, type=int, help="Janela em dias (default 7).")
+@click.option("--limit", default=10, type=int, help="Top N projetos (default 10).")
+def projects(days: int, limit: int) -> None:
+    """Top projetos (cwd) por créditos consumidos numa janela de N dias."""
+    sessions = load_all_sessions()
+    pairs = turns_in_last_days(sessions, days=days)
+    if not pairs:
+        console.print(f"[yellow]Sem turns nos últimos {days} dias.[/yellow]")
+        return
+
+    aggs = aggregate_by_cwd(pairs)[:limit]
+    total = total_credits(pairs)
+
+    header = Text()
+    header.append(f"últimos {days}d  ", style="bold")
+    header.append(f"{_fmt_credits(total)} créditos", style="bold green")
+    console.print(Panel(header, title="Projetos", expand=False))
+    console.print(_aggregates_table("Por projeto (cwd)", aggs, "cwd"))
 
 
 if __name__ == "__main__":  # pragma: no cover
