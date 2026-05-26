@@ -68,3 +68,25 @@ def test_models_default_window_aggregates_by_model_id():
     assert result.exit_code == 0
     assert "claude-opus-4.7" in result.output
     assert "auto" in result.output
+
+
+def test_recent_orders_by_updated_at_desc():
+    with patch("kiro_dash.cli.load_all_sessions", return_value=_fake_sessions()):
+        runner = CliRunner()
+        result = runner.invoke(main, ["recent", "--limit", "5"])
+    assert result.exit_code == 0
+    # aaaa é a mais recente (updated_at = now), bbbb depois (-2h), cccc por último (-15d)
+    pos_a = result.output.find("aaaa")
+    pos_b = result.output.find("bbbb")
+    pos_c = result.output.find("cccc")
+    assert 0 <= pos_a < pos_b < pos_c
+
+
+def test_recent_marks_active_sessions():
+    with patch("kiro_dash.cli.load_all_sessions", return_value=_fake_sessions()):
+        runner = CliRunner()
+        result = runner.invoke(main, ["recent"])
+    assert result.exit_code == 0
+    # Pelo menos um marcador visual para 'aaaa' (que tem is_active=True)
+    # — usamos '●' como marcador (igual ao `session`)
+    assert "●" in result.output

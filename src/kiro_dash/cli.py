@@ -398,5 +398,44 @@ def models(days: int, limit: int) -> None:
     console.print(_aggregates_table("Por modelo", aggs, "modelo"))
 
 
+# ─── recent ───────────────────────────────────────────────────────────────
+
+
+@main.command()
+@click.option("--limit", default=20, type=int, help="N últimas sessões (default 20).")
+def recent(limit: int) -> None:
+    """Últimas N sessões ordenadas por updated_at desc, ativas marcadas com ●."""
+    sessions = load_all_sessions()
+    if not sessions:
+        console.print("[yellow]Nenhuma sessão encontrada.[/yellow]")
+        return
+
+    sessions = sorted(sessions, key=lambda s: s.updated_at, reverse=True)[:limit]
+
+    table = Table(title=f"Últimas {len(sessions)} sessões", expand=False, header_style="bold")
+    table.add_column("sid")
+    table.add_column("título", overflow="fold")
+    table.add_column("agent")
+    table.add_column("modelo")
+    table.add_column("turns", justify="right")
+    table.add_column("créditos", justify="right")
+    table.add_column("atualizada")
+
+    for s in sessions:
+        sid = f"{s.session_id[:8]}{' ●' if s.is_active else ''}"
+        title = (s.title or "—")[:60]
+        table.add_row(
+            sid,
+            title,
+            s.agent_name or "?",
+            s.model_id,
+            str(len(s.turns)),
+            _fmt_credits(s.total_credits),
+            _fmt_relative_time(s.updated_at),
+        )
+
+    console.print(table)
+
+
 if __name__ == "__main__":  # pragma: no cover
     main()
