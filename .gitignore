@@ -34,3 +34,6 @@ env/
 
 # Não versionar fixtures de sessão real (PII potencial)
 tests/fixtures/real/
+
+# Worktrees criados via git worktree add
+.worktrees/

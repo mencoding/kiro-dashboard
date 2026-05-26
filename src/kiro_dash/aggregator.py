@@ -55,6 +55,28 @@ def turns_in_local_day(
     return out
 
 
+def turns_in_last_days(
+    sessions: list[Session],
+    days: int,
+) -> list[tuple[Session, Turn]]:
+    """Retorna pares (sessão, turn) cujo end_timestamp caiu nos últimos N dias.
+
+    A janela é aberta no fim (inclui o instante atual) e fechada no início
+    em ``now - days``. ``days <= 0`` devolve lista vazia.
+    """
+    if days <= 0:
+        return []
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=days)
+
+    out: list[tuple[Session, Turn]] = []
+    for s in sessions:
+        for t in s.turns:
+            if cutoff <= t.end_timestamp <= now:
+                out.append((s, t))
+    return out
+
+
 def _aggregate_pairs(
     pairs: list[tuple[Session, Turn]],
     *,
