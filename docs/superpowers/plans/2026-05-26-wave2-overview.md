@@ -77,7 +77,7 @@ Merge G no main. Tag `v0.3.0`.
 
 ## Decisões consolidadas (registradas com Léo)
 
-- **TUI sem auto-refresh** — refresh apenas via tecla `r`. Polling fica como Wave 3 com debounce/lock se necessário.
+- **TUI auto-refresh seletivo** — Now atualiza sozinha a cada 2s (`NOW_REFRESH_SEC = 2.0`); Today/Projects/Models/Tools/Session ficam manuais via `r`. Mesmo padrão do `claude-dash` em produção, justificado pelo custo de re-render das abas que reparseiam transcripts inteiros.
 - **Sync exclui `.jsonl`** — só metadata de sessão (`.json`) entra no Drive.
 - **Heurística project_label hardcoded** — categorias `pessoal/profissional/institucional/concluidos` reconhecidas; subpasta `geral` dentro de cada vira `<categoria>/geral` naturalmente. Override TOML é Wave 3.
 - **Auto-detect de plano via API** — fora desta wave (API privada AWS Q Developer, frágil). TOML declarativo é a fonte de verdade.
@@ -89,4 +89,3 @@ Merge G no main. Tag `v0.3.0`.
 - Cache em `~/.cache/kiro-dash/` (parser cresce, viagem barata se virar lento)
 - Audit hook (espelho do `claude-dash-audit-hook` para o Kiro CLI) — investigação separada dos matchers do Kiro
 - Push pro GitHub (`gh repo create mencoding/kiro-dashboard --private` + push)
-- Polling opt-in na TUI (com debounce)
