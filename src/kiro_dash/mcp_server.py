@@ -1,0 +1,243 @@
+"""Servidor MCP stdio de ``kiro-dash``.
+
+Expõe o estado de uso do Kiro CLI como ferramentas consultáveis por
+outros agentes. **Cego ao conteúdo de mensagens** — só metadata
+estrutural.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+from datetime import datetime, timezone
+
+from kiro_dash.account import WhoAmI, run_whoami
+from kiro_dash.aggregator import (
+    Aggregate,
+    active_sessions,
+    aggregate_by_agent,
+    aggregate_by_cwd,
+    aggregate_by_model,
+    aggregate_by_session,
+    total_credits,
+    turns_in_last_days,
+    turns_in_local_day,
+)
+from kiro_dash.parser import (
+    find_session_by_prefix,
+    load_all_sessions,
+    load_session_file,
+)
+
+
+def _agg_to_dict(a: Aggregate) -> dict:
+    return {
+        "label": a.label,
+        "credits": round(a.credits, 6),
+        "turns": a.turns,
+        "sessions": a.sessions,
+        "duration_seconds": int(a.duration.total_seconds()),
+        "tool_uses": a.tool_uses,
+    }
+
+
+def tool_today_summary() -> dict:
+    sessions = load_all_sessions()
+    pairs = turns_in_local_day(sessions)
+    return {
+        "date": datetime.now().astimezone().date().isoformat(),
+        "total_credits": round(total_credits(pairs), 6),
+        "total_turns": len(pairs),
+        "total_sessions": len({s.session_id for s, _ in pairs}),
+        "by_model": [_agg_to_dict(a) for a in aggregate_by_model(pairs)],
+        "by_agent": [_agg_to_dict(a) for a in aggregate_by_agent(pairs)],
+        "by_cwd": [_agg_to_dict(a) for a in aggregate_by_cwd(pairs)],
+        "by_session": [_agg_to_dict(a) for a in aggregate_by_session(pairs)],
+    }
+
+
+def tool_active_sessions() -> list[dict]:
+    sessions = load_all_sessions()
+    out = []
+    for s in active_sessions(sessions):
+        last = s.last_turn_at or s.updated_at
+        out.append({
+            "session_id": s.session_id,
+            "title": s.title,
+            "agent_name": s.agent_name,
+            "model_id": s.model_id,
+            "rate_multiplier": s.rate_multiplier,
+            "cwd": s.cwd,
+            "turns_count": len(s.turns),
+            "total_credits": round(s.total_credits, 6),
+            "context_usage_pct": s.last_context_usage_pct,
+            "last_turn_at": last.isoformat() if last else None,
+        })
+    return out
+
+
+def tool_session_details(session_id_prefix: str) -> dict | None:
+    path = find_session_by_prefix(session_id_prefix)
+    if path is None:
+        return None
+    s = load_session_file(path)
+    if s is None:
+        return None
+    return {
+        "session_id": s.session_id,
+        "title": s.title,
+        "agent_name": s.agent_name,
+        "model_id": s.model_id,
+        "rate_multiplier": s.rate_multiplier,
+        "context_window_tokens": s.context_window_tokens,
+        "cwd": s.cwd,
+        "created_at": s.created_at.isoformat(),
+        "updated_at": s.updated_at.isoformat(),
+        "is_active": s.is_active,
+        "session_created_reason": s.session_created_reason,
+        "turns_count": len(s.turns),
+        "total_credits": round(s.total_credits, 6),
+        "total_duration_seconds": int(s.total_duration.total_seconds()),
+        "total_tool_uses": s.total_tool_uses,
+        "last_context_usage_pct": s.last_context_usage_pct,
+        "turns": [
+            {
+                "end_timestamp": t.end_timestamp.isoformat(),
+                "agent_name": t.agent_name,
+                "duration_seconds": int(t.duration.total_seconds()),
+                "credits": round(t.credits, 6),
+                "context_usage_pct": t.context_usage_pct,
+                "builtin_tool_uses": t.builtin_tool_uses,
+                "number_of_cycles": t.number_of_cycles,
+                "end_reason": t.end_reason,
+            }
+            for t in s.turns
+        ],
+    }
+
+
+def tool_top_projects(days: int = 7, limit: int = 10) -> list[dict]:
+    sessions = load_all_sessions()
+    pairs = turns_in_last_days(sessions, days=days)
+    return [_agg_to_dict(a) for a in aggregate_by_cwd(pairs)[:limit]]
+
+
+def tool_top_models(days: int = 7, limit: int = 10) -> list[dict]:
+    sessions = load_all_sessions()
+    pairs = turns_in_last_days(sessions, days=days)
+    return [_agg_to_dict(a) for a in aggregate_by_model(pairs)[:limit]]
+
+
+def tool_account_info() -> dict:
+    info = run_whoami()
+    if info is None:
+        return {"available": False}
+    return {
+        "available": True,
+        "account_type": info.account_type,
+        "email": info.email,
+        "region_sso": info.region,
+        "start_url": info.start_url,
+        "profile_name": info.profile_name,
+        "profile_arn": info.profile_arn,
+        "aws_account_id": info.aws_account_id,
+        "profile_region": info.profile_region,
+        "is_enterprise": info.is_enterprise,
+    }
+
+
+def main() -> int:
+    """Entry point: sobe o servidor MCP stdio."""
+    asyncio.run(_serve())
+    return 0
+
+
+async def _serve() -> None:
+    from mcp.server import Server
+    from mcp.server.stdio import stdio_server
+    from mcp.types import TextContent, Tool
+
+    app = Server("kiro-dash")
+
+    tool_specs = [
+        Tool(
+            name="today_summary",
+            description="Agregado do dia local: créditos, turns, modelos, agents, projetos.",
+            inputSchema={"type": "object", "properties": {}},
+        ),
+        Tool(
+            name="active_sessions",
+            description="Sessões ativas (com lockfile) no momento.",
+            inputSchema={"type": "object", "properties": {}},
+        ),
+        Tool(
+            name="session_details",
+            description="Drill-down estrutural de uma sessão por prefixo de session_id.",
+            inputSchema={
+                "type": "object",
+                "properties": {"session_id_prefix": {"type": "string"}},
+                "required": ["session_id_prefix"],
+            },
+        ),
+        Tool(
+            name="account_info",
+            description="Identidade AWS / Kiro do dispositivo.",
+            inputSchema={"type": "object", "properties": {}},
+        ),
+        Tool(
+            name="top_projects",
+            description="Top projetos (cwd) por créditos numa janela de N dias.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "days": {"type": "integer", "default": 7},
+                    "limit": {"type": "integer", "default": 10},
+                },
+            },
+        ),
+        Tool(
+            name="top_models",
+            description="Top modelos por créditos numa janela de N dias.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "days": {"type": "integer", "default": 7},
+                    "limit": {"type": "integer", "default": 10},
+                },
+            },
+        ),
+    ]
+
+    @app.list_tools()
+    async def _list_tools() -> list[Tool]:
+        return tool_specs
+
+    @app.call_tool()
+    async def _call_tool(name: str, arguments: dict) -> list[TextContent]:
+        if name == "today_summary":
+            payload = tool_today_summary()
+        elif name == "active_sessions":
+            payload = tool_active_sessions()
+        elif name == "session_details":
+            payload = tool_session_details(arguments.get("session_id_prefix", ""))
+        elif name == "account_info":
+            payload = tool_account_info()
+        elif name == "top_projects":
+            payload = tool_top_projects(
+                days=int(arguments.get("days", 7)),
+                limit=int(arguments.get("limit", 10)),
+            )
+        elif name == "top_models":
+            payload = tool_top_models(
+                days=int(arguments.get("days", 7)),
+                limit=int(arguments.get("limit", 10)),
+            )
+        else:
+            payload = {"error": f"unknown tool: {name}"}
+        return [TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))]
+
+    async with stdio_server() as (read_stream, write_stream):
+        await app.run(read_stream, write_stream, app.create_initialization_options())
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -25,6 +25,7 @@ classifiers = [
 dependencies = [
     "rich>=13.7",
     "click>=8.1",
+    "mcp>=1.0",
 ]
 
 [project.optional-dependencies]
@@ -35,6 +36,7 @@ dev = [
 
 [project.scripts]
 kiro-dash = "kiro_dash.cli:main"
+kiro-dash-mcp = "kiro_dash.mcp_server:main"
 
 [project.urls]
 Homepage = "https://github.com/mencoding/kiro-dashboard"

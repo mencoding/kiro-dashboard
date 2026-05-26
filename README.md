@@ -51,6 +51,35 @@ pipx install ~/Desenvolvimento/mencoding/kiro-dash
 - [`click`](https://click.palletsprojects.com) — CLI
 - Parsing nativo de JSON (sem dependência externa)
 
+## MCP server — canal para outros agentes
+
+A partir da v0.2 o `kiro-dash-mcp` expõe o estado do Kiro CLI como
+ferramentas consultáveis via Model Context Protocol. Útil para agentes
+fazerem meta-raciocínio sobre o próprio uso de créditos.
+
+Registrar no Kiro CLI (assumindo que `kiro-dash-mcp` está no `PATH`):
+
+```json
+// Em mcpServers do agent config:
+"kiro-dash": {
+  "command": "kiro-dash-mcp"
+}
+```
+
+Tools expostas:
+
+| Tool | Retorna |
+|---|---|
+| `today_summary` | Agregado do dia local |
+| `active_sessions` | Sessões com lockfile no momento |
+| `session_details(session_id_prefix)` | Drill-down (estrutural; sem conteúdo) |
+| `account_info` | Conta, profile ARN, billing tier |
+| `top_projects(days, limit)` | Top projetos por créditos |
+| `top_models(days, limit)` | Top modelos por créditos |
+
+**Privacidade:** nenhuma tool expõe conteúdo de mensagens — apenas
+metadata estrutural (mesma superfície da CLI).
+
 ## Licença
 
 Privado — uso pessoal de Leonardo Menzani.
