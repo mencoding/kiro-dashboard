@@ -5,7 +5,8 @@ para os comandos da CLI (``today``, ``projects``, ``models``).
 """
 from __future__ import annotations
 
-from collections import defaultdict
+import time as _time
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 
@@ -150,3 +151,45 @@ def total_credits(pairs: list[tuple[Session, Turn]]) -> float:
 def active_sessions(sessions: list[Session]) -> list[Session]:
     """Filtra sessões com ``is_active = True`` (lockfile presente)."""
     return [s for s in sessions if s.is_active]
+
+
+from kiro_dash.jsonl_parser import iter_tool_calls
+
+
+def aggregate_tools_in_window(
+    sessions_dir: Path,
+    *,
+    hours: int = 24,
+) -> list[dict]:
+    """Conta tool calls em ``.jsonl`` cujo mtime cai na janela."""
+    if not sessions_dir.is_dir():
+        return []
+
+    cutoff = _time.time() - hours * 3600
+    counts: Counter[str] = Counter()
+    sessions_by_name: dict[str, set[str]] = defaultdict(set)
+    errors_by_name: Counter[str] = Counter()
+
+    for path in sessions_dir.iterdir():
+        if not (path.is_file() and path.suffix == ".jsonl"):
+            continue
+        try:
+            if path.stat().st_mtime < cutoff:
+                continue
+        except OSError:
+            continue
+        for call in iter_tool_calls(path):
+            counts[call.name] += 1
+            sessions_by_name[call.name].add(call.session_id)
+            if call.status == "error":
+                errors_by_name[call.name] += 1
+
+    return [
+        {
+            "name": name,
+            "count": cnt,
+            "sessions": len(sessions_by_name[name]),
+            "errors": errors_by_name[name],
+        }
+        for name, cnt in counts.most_common()
+    ]
