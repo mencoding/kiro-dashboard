@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kiro-dashboard"
+version = "0.1.0"
+description = "Painel local de uso e créditos para o Kiro CLI (ex-Q Developer CLI)"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [
+    { name = "Leonardo Menzani", email = "leonardo.menzani@gmail.com" },
+]
+license = { text = "Proprietary" }
+keywords = ["kiro", "kiro-cli", "amazon-q", "credits", "usage", "dashboard", "monitoring"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Monitoring",
+    "Topic :: Terminals",
+]
+dependencies = [
+    "rich>=13.7",
+    "click>=8.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "ruff>=0.4",
+]
+
+[project.scripts]
+kiro-dash = "kiro_dash.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/mencoding/kiro-dashboard"
+Issues = "https://github.com/mencoding/kiro-dashboard/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM", "RUF"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
