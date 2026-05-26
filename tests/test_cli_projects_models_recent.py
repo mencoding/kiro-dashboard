@@ -59,3 +59,12 @@ def test_projects_window_30d_includes_old_session():
     assert "/proj/alfa" in result.output
     # Total de alfa em 30d = 5+3 = 8
     assert "8.00" in result.output
+
+
+def test_models_default_window_aggregates_by_model_id():
+    with patch("kiro_dash.cli.load_all_sessions", return_value=_fake_sessions()):
+        runner = CliRunner()
+        result = runner.invoke(main, ["models"])
+    assert result.exit_code == 0
+    assert "claude-opus-4.7" in result.output
+    assert "auto" in result.output
