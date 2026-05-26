@@ -28,6 +28,7 @@ from kiro_dash.aggregator import (
     aggregate_by_cwd,
     aggregate_by_model,
     aggregate_by_session,
+    aggregate_tools_in_window,
     total_credits,
     turns_in_last_days,
     turns_in_local_day,
@@ -434,6 +435,41 @@ def recent(limit: int) -> None:
             _fmt_relative_time(s.updated_at),
         )
 
+    console.print(table)
+
+
+# ─── tools ────────────────────────────────────────────────────────────────
+
+
+@main.command()
+@click.option("--hours", default=24, type=int, help="Janela em horas (default 24).")
+@click.option("--limit", default=20, type=int, help="Top N tools (default 20).")
+def tools(hours: int, limit: int) -> None:
+    """Breakdown de tool calls nas últimas N horas (lê .jsonl)."""
+    aggs = aggregate_tools_in_window(DEFAULT_SESSIONS_DIR, hours=hours)
+    if not aggs:
+        console.print(f"[yellow]Nenhuma tool call nas últimas {hours}h.[/yellow]")
+        return
+
+    aggs = aggs[:limit]
+    total = sum(a["count"] for a in aggs)
+    err_total = sum(a["errors"] for a in aggs)
+
+    header = Text()
+    header.append(f"últimas {hours}h  ", style="bold")
+    header.append(f"{total} chamadas", style="bold cyan")
+    if err_total:
+        header.append(f"  {err_total} erros", style="bold red")
+    console.print(Panel(header, title="Tools", expand=False))
+
+    table = Table(title="Tools", expand=False, header_style="bold")
+    table.add_column("tool")
+    table.add_column("count", justify="right")
+    table.add_column("sessões", justify="right")
+    table.add_column("erros", justify="right")
+    for a in aggs:
+        err_cell = Text(str(a["errors"]), style="red") if a["errors"] else Text("0", style="dim")
+        table.add_row(a["name"], str(a["count"]), str(a["sessions"]), err_cell)
     console.print(table)
 
 
