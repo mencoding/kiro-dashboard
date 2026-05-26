@@ -29,6 +29,7 @@ from kiro_dash.aggregator import (
     aggregate_by_model,
     aggregate_by_session,
     total_credits,
+    turns_in_last_days,
     turns_in_local_day,
 )
 from kiro_dash.models import Session
@@ -347,6 +348,93 @@ def now(refresh: float) -> None:
     except KeyboardInterrupt:
         console.print()
         return
+
+
+# ─── projects ─────────────────────────────────────────────────────────────
+
+
+@main.command()
+@click.option("--days", default=7, type=int, help="Janela em dias (default 7).")
+@click.option("--limit", default=10, type=int, help="Top N projetos (default 10).")
+def projects(days: int, limit: int) -> None:
+    """Top projetos (cwd) por créditos consumidos numa janela de N dias."""
+    sessions = load_all_sessions()
+    pairs = turns_in_last_days(sessions, days=days)
+    if not pairs:
+        console.print(f"[yellow]Sem turns nos últimos {days} dias.[/yellow]")
+        return
+
+    aggs = aggregate_by_cwd(pairs)[:limit]
+    total = total_credits(pairs)
+
+    header = Text()
+    header.append(f"últimos {days}d  ", style="bold")
+    header.append(f"{_fmt_credits(total)} créditos", style="bold green")
+    console.print(Panel(header, title="Projetos", expand=False))
+    console.print(_aggregates_table("Por projeto (cwd)", aggs, "cwd"))
+
+
+# ─── models ───────────────────────────────────────────────────────────────
+
+
+@main.command()
+@click.option("--days", default=7, type=int, help="Janela em dias (default 7).")
+@click.option("--limit", default=10, type=int, help="Top N modelos (default 10).")
+def models(days: int, limit: int) -> None:
+    """Top modelos por créditos consumidos numa janela de N dias."""
+    sessions = load_all_sessions()
+    pairs = turns_in_last_days(sessions, days=days)
+    if not pairs:
+        console.print(f"[yellow]Sem turns nos últimos {days} dias.[/yellow]")
+        return
+
+    aggs = aggregate_by_model(pairs)[:limit]
+    total = total_credits(pairs)
+
+    header = Text()
+    header.append(f"últimos {days}d  ", style="bold")
+    header.append(f"{_fmt_credits(total)} créditos", style="bold green")
+    console.print(Panel(header, title="Modelos", expand=False))
+    console.print(_aggregates_table("Por modelo", aggs, "modelo"))
+
+
+# ─── recent ───────────────────────────────────────────────────────────────
+
+
+@main.command()
+@click.option("--limit", default=20, type=int, help="N últimas sessões (default 20).")
+def recent(limit: int) -> None:
+    """Últimas N sessões ordenadas por updated_at desc, ativas marcadas com ●."""
+    sessions = load_all_sessions()
+    if not sessions:
+        console.print("[yellow]Nenhuma sessão encontrada.[/yellow]")
+        return
+
+    sessions = sorted(sessions, key=lambda s: s.updated_at, reverse=True)[:limit]
+
+    table = Table(title=f"Últimas {len(sessions)} sessões", expand=False, header_style="bold")
+    table.add_column("sid")
+    table.add_column("título", overflow="fold")
+    table.add_column("agent")
+    table.add_column("modelo")
+    table.add_column("turns", justify="right")
+    table.add_column("créditos", justify="right")
+    table.add_column("atualizada")
+
+    for s in sessions:
+        sid = f"{s.session_id[:8]}{' ●' if s.is_active else ''}"
+        title = (s.title or "—")[:60]
+        table.add_row(
+            sid,
+            title,
+            s.agent_name or "?",
+            s.model_id,
+            str(len(s.turns)),
+            _fmt_credits(s.total_credits),
+            _fmt_relative_time(s.updated_at),
+        )
+
+    console.print(table)
 
 
 if __name__ == "__main__":  # pragma: no cover
