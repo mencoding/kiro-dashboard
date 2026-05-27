@@ -473,5 +473,12 @@ def tools(hours: int, limit: int) -> None:
     console.print(table)
 
 
+@main.command()
+def tui() -> None:
+    """Lança a TUI interativa (6 abas: now/today/projects/models/tools/session)."""
+    from kiro_dash.views.app import run_app
+    raise SystemExit(run_app())
+
+
 if __name__ == "__main__":  # pragma: no cover
     main()
