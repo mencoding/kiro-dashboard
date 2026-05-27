@@ -7,7 +7,7 @@ from textual.app import ComposeResult
 from textual.containers import Container
 from textual.widgets import DataTable, Static
 
-from kiro_dash.aggregator import Aggregate, aggregate_by_cwd, turns_in_last_days
+from kiro_dash.aggregator import Aggregate, aggregate_by_project, turns_in_last_days
 from kiro_dash.models import Session
 from kiro_dash.parser import load_all_sessions
 
@@ -20,7 +20,7 @@ class ProjectsSnapshot:
 
 def build_projects_snapshot(sessions: list[Session], *, days: int = 7) -> ProjectsSnapshot:
     pairs = turns_in_last_days(sessions, days=days)
-    return ProjectsSnapshot(window_days=days, aggs=aggregate_by_cwd(pairs))
+    return ProjectsSnapshot(window_days=days, aggs=aggregate_by_project(pairs))
 
 
 class ProjectsTab(Container):
@@ -32,7 +32,7 @@ class ProjectsTab(Container):
 
     def on_mount(self) -> None:
         t = self.query_one("#projects-table", DataTable)
-        t.add_columns("projeto (cwd)", "créditos", "turns", "sessões", "duração")
+        t.add_columns("projeto", "créditos", "turns", "sessões", "duração")
         self.refresh_snapshot()
 
     def refresh_snapshot(self) -> None:
