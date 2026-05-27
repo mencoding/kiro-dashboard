@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import signal as _signal
 import time
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import click
@@ -73,6 +73,7 @@ from kiro_dash.watchdog import (
     stuck_sessions,
 )
 from kiro_dash.jsonl_parser import iter_tool_calls
+from kiro_dash.snapshots import ensure_snapshots_up_to, write_snapshot
 
 console = Console()
 
@@ -228,6 +229,7 @@ def whoami() -> None:
 @click.option("--agent", default=None, help="Filtra por agent_name.")
 def today(day_str: str | None, agent: str | None) -> None:
     """Agregado de créditos do dia corrente."""
+    _ensure_snapshots_silently()
     d = date.fromisoformat(day_str) if day_str else datetime.now().astimezone().date()
 
     sessions = load_all_sessions()
@@ -447,6 +449,7 @@ def now(refresh: float) -> None:
 @click.option("--agent", default=None, help="Filtra por agent_name.")
 def projects(window: str, days: int | None, limit: int, agent: str | None) -> None:
     """Top projetos (heurística) por créditos numa janela nomeada ou em N dias."""
+    _ensure_snapshots_silently()
     sessions = load_all_sessions()
     plan_cfg = load_plan(default_config_path())
     try:
@@ -490,6 +493,7 @@ def projects(window: str, days: int | None, limit: int, agent: str | None) -> No
 @click.option("--agent", default=None, help="Filtra por agent_name.")
 def models(window: str, days: int | None, limit: int, agent: str | None) -> None:
     """Top modelos por créditos numa janela nomeada ou em N dias."""
+    _ensure_snapshots_silently()
     sessions = load_all_sessions()
     plan_cfg = load_plan(default_config_path())
     try:
@@ -1158,6 +1162,63 @@ def tool(name: str, hours: int, errors_only: bool, tail: int, show_input: bool) 
                         style="red" if t.error_summary else "dim")
         table.add_row(status_cell, t.tool_use_id[:8], keys_cell, err_cell)
     console.print(table)
+
+
+# ─── snapshot ─────────────────────────────────────────────────────────────
+
+_already_ensured = False
+
+
+def _ensure_snapshots_silently() -> None:
+    """Lazy + self-healing: garante snapshots passados. Silencioso."""
+    global _already_ensured  # noqa: PLW0603
+    if _already_ensured:
+        return
+    _already_ensured = True
+    try:
+        sessions = load_all_sessions()
+        yesterday = datetime.now().astimezone().date() - timedelta(days=1)
+        ensure_snapshots_up_to(yesterday, sessions, lookback_days=30)
+    except Exception:
+        pass
+
+
+@main.command()
+@click.argument("date_str", required=False)
+@click.option("--force", is_flag=True, default=False,
+              help="Re-escreve snapshot existente.")
+def snapshot(date_str: str | None, force: bool) -> None:
+    """Gera snapshot histórico.
+
+    Sem argumento: roda lazy/self-healing (últimos 30 dias até ontem).
+    Com YYYY-MM-DD: gera/garante esse dia. --force sobrescreve.
+    """
+    sessions = load_all_sessions()
+    today_d = datetime.now().astimezone().date()
+
+    if date_str is None:
+        yesterday = today_d - timedelta(days=1)
+        created = ensure_snapshots_up_to(yesterday, sessions)
+        if created:
+            console.print(f"[green]Criados {len(created)} snapshot(s).[/green]")
+            for p in created[-5:]:
+                console.print(f"  [dim]{p.name}[/dim]")
+        else:
+            console.print("[dim]Nenhum snapshot pendente.[/dim]")
+        return
+
+    try:
+        d = date.fromisoformat(date_str)
+    except ValueError:
+        console.print(f"[red]Data inválida: '{date_str}'. Use YYYY-MM-DD.[/red]")
+        raise SystemExit(2)
+
+    if d >= today_d:
+        console.print(f"[yellow]{d} é hoje ou futuro — snapshots só fecham D-1.[/yellow]")
+        raise SystemExit(2)
+
+    target = write_snapshot(sessions, d=d, overwrite=force)
+    console.print(f"[green]Snapshot garantido:[/green] {target.name}")
 
 
 if __name__ == "__main__":  # pragma: no cover
