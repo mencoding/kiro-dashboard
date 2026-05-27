@@ -54,7 +54,7 @@ def test_sources_detect_ide_only(tmp_path):
 
 
 def test_sources_detect_none(tmp_path):
-    s = Sources.detect(cli_json=None, ide_state=None)
+    s = Sources.detect(cli_json=None, ide_state=None, ide_sessions=None)
     assert s.cli_json is None
     assert s.ide_state is None
     assert s.has_any() is False
@@ -66,7 +66,7 @@ def test_sources_detect_skips_unavailable_cli(tmp_path):
     # Forçar pasta inexistente: apontamos default para um tmp limpo via env não suportada,
     # então usamos passagem explícita
     cli = _make_cli_backend(tmp_path, exists=False)
-    s = Sources.detect(cli_json=cli, ide_state=None)
+    s = Sources.detect(cli_json=cli, ide_state=None, ide_sessions=None)
     # Via passagem explícita (cli_json=cli), respeitamos a instância sem filtrar.
     # Mas o detector default filtra via is_available — testado em outro teste.
     assert s.cli_json is cli  # respeitou explícito
@@ -78,16 +78,21 @@ def test_sources_default_detect_filters_unavailable(monkeypatch, tmp_path):
     # Apontar paths default para locais inexistentes via monkeypatch
     fake_sessions = tmp_path / "no_sessions"
     fake_state = tmp_path / "no_state.vscdb"
+    fake_ide_root = tmp_path / "no_ide_root"
 
     from kiro_dash.backends import cli_json as cli_mod
+    from kiro_dash.backends import ide_sessions as ide_sess_mod
     from kiro_dash.backends import ide_state as ide_mod
 
     monkeypatch.setattr(cli_mod, "DEFAULT_SESSIONS_DIR", fake_sessions)
     monkeypatch.setattr(ide_mod, "DEFAULT_IDE_STATE_VSCDB", fake_state)
+    monkeypatch.setattr(ide_sess_mod, "DEFAULT_IDE_SESSIONS_ROOT", fake_ide_root)
+    monkeypatch.delenv("KIRO_DASH_IDE_SESSIONS_ROOT", raising=False)
 
     s = Sources.detect()
     assert s.cli_json is None
     assert s.ide_state is None
+    assert s.ide_sessions is None
     assert s.has_any() is False
 
 
@@ -117,7 +122,7 @@ def test_available_for_sessions_uses_cli(tmp_path):
 
 def test_all_backends_only_returns_present(tmp_path):
     cli = _make_cli_backend(tmp_path, exists=True)
-    s = Sources.detect(cli_json=cli, ide_state=None)
+    s = Sources.detect(cli_json=cli, ide_state=None, ide_sessions=None)
     assert s.all_backends() == [cli]
 
 
@@ -137,8 +142,51 @@ def test_summary_lines_includes_all_slots(tmp_path):
 
 
 def test_summary_lines_marks_unavailable_with_dash(tmp_path):
-    s = Sources.detect(cli_json=None, ide_state=None)
+    s = Sources.detect(cli_json=None, ide_state=None, ide_sessions=None)
     lines = s.summary_lines()
     text = "\n".join(lines)
     assert "✓" not in text
     assert text.count("—") >= 4
+
+
+def test_summary_lines_shows_ide_sessions_count_when_present(tmp_path):
+    """T10 — summary mostra contagem de workspaces no IDE Sessions."""
+    from kiro_dash.backends.ide_sessions import IdeSessionBackend
+    from tests.fixtures.ide.build_ide_layout import build_ide_layout
+
+    kiro_root = build_ide_layout(tmp_path)
+    backend = IdeSessionBackend(root=kiro_root)
+    s = Sources.detect(cli_json=None, ide_state=None, ide_sessions=backend)
+    text = "\n".join(s.summary_lines())
+    assert "ide-sessions   ✓" in text
+    assert "1 workspace" in text  # singular
+    assert "atrás" in text  # idade do snapshot
+
+
+def test_summary_lines_shows_ide_sessions_plural(tmp_path):
+    """T10 — pluralização correta com 2+ workspaces."""
+    from kiro_dash.backends.ide_sessions import IdeSessionBackend
+    from tests.fixtures.ide.build_ide_layout import build_ide_layout
+
+    kiro_root = build_ide_layout(
+        tmp_path, extra_workspaces=["/home/test/another", "/srv/lab/xyz"]
+    )
+    backend = IdeSessionBackend(root=kiro_root)
+    s = Sources.detect(cli_json=None, ide_state=None, ide_sessions=backend)
+    text = "\n".join(s.summary_lines())
+    assert "3 workspaces" in text  # plural
+
+
+def test_available_for_sessions_includes_ide_sessions(tmp_path):
+    """T10 — IdeSessionBackend aparece em available_for(SESSIONS)."""
+    from kiro_dash.backends import Capability
+    from kiro_dash.backends.ide_sessions import IdeSessionBackend
+    from tests.fixtures.ide.build_ide_layout import build_ide_layout
+
+    kiro_root = build_ide_layout(tmp_path)
+    backend = IdeSessionBackend(root=kiro_root)
+    s = Sources.detect(cli_json=None, ide_state=None, ide_sessions=backend)
+    available = s.available_for(Capability.SESSIONS)
+    assert backend in available
+    available_running = s.available_for(Capability.RUNNING)
+    assert backend in available_running

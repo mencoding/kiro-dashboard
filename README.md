@@ -260,6 +260,60 @@ inconsistente. Use quando SIGTERM não responder.
 > "travado" de "trabalhando muito". Calibre o threshold (3m para tarefas
 > curtas, 30m para builds longos).
 
+### Sessões do Kiro IDE (Wave 6, frente Q)
+
+Quando o **Kiro IDE** está instalado, o `kiro-dash` também enxerga
+sessões executadas dentro do IDE — não apenas via CLI. Cada
+``execution`` registrada pelo IDE em
+``~/.config/Kiro/User/globalStorage/kiro.kiroagent/`` vira um
+``Turn`` no domínio interno, com créditos por fase, intent
+classification (``chat``/``do``/``spec``) e tools usadas.
+
+A seleção de fonte se dá via flag `--source`:
+
+```bash
+kiro-dash recent --source ide        # só sessões IDE
+kiro-dash recent --source all        # CLI + IDE concatenados (coluna source)
+kiro-dash recent --source cli        # default — só CLI (retro-compat)
+
+kiro-dash audit running --source all # sessões em curso de ambas fontes
+kiro-dash session <prefix>           # auto-resolve em ambas fontes; --source força
+```
+
+Comandos suportando `--source` na frente Q: `recent`, `audit running`,
+`session <prefix>`. Os agregados (`today`, `projects`, `models`,
+`tools`) continuam só-CLI até a frente R, que entrega o aggregator
+multi-source.
+
+**Identidade composta:** sessões IDE têm `session_id` prefixado
+(`ide-sessions:<uuid>`) para diferenciá-las de sessões CLI. Comandos
+e tools MCP aceitam tanto o prefixo composto quanto o UUID raw.
+
+**Heurística "live" do IDE** (decisão #10 do plano frente Q):
+catálogo de executions (`f62de366d0006e17ea00a01f6624aabf`) traz
+status; se alguma execution tem `status="running"` e `endTime=0`, a
+sessão é considerada live. Isso é equivalente ao `.lock` do CLI, mas
+sem precisar de filesystem locking.
+
+**Workflows observados** (decisão #4 do plano):
+
+| `workflowType` | `intent.classification` | Cenário |
+|---|---|---|
+| `chat-agent` | `chat` | Pergunta simples |
+| `chat-agent` | `do` | Autopilot executa (read/write/bash/control) |
+| `chat-agent` | `spec` | Dispatcha para specAgent (pequeno) |
+| `spec-generation` | (ausente) | Sub-execução pesada que gera arquivos da spec |
+
+Pedido de spec dispara **2 executions encadeadas** com mesmo
+`chatSessionId`. Por default, cada execution = 1 turn. A consolidação
+"spec lógico" (somar créditos das duas) fica para a frente R com o
+aggregator multi-source.
+
+**Privacidade preservada:** o reader IDE é tão cego quanto o CLI —
+nunca lê `actions[].input.content`, `actions[].say.message`,
+`history[].message` nem `editorState`. Apenas metadata estrutural
+(IDs, timestamps, `usageSummary`, `intentResult.classification`).
+
 ### Sync multi-device
 
 Sincroniza apenas `.json` (metadata) entre dispositivos via Google Drive.
@@ -312,8 +366,10 @@ seção `[project_aliases]`.
 | Var | Default | Propósito |
 |---|---|---|
 | `KIRO_DASH_NO_CACHE` | unset | bypass do cache do parser para uma execução |
-| `KIRO_DASH_IDE_STATE_PATH` | `~/.config/Kiro/User/globalStorage/state.vscdb` | override do path do `state.vscdb` do IDE |
+| `KIRO_DASH_IDE_STATE_PATH` | `~/.config/Kiro/User/globalStorage/state.vscdb` | override do path do `state.vscdb` do IDE (frente P) |
 | `KIRO_DASH_NO_IDE_STATE` | unset | desabilita leitura do billing IDE (testes/debug) |
+| `KIRO_DASH_IDE_SESSIONS_ROOT` | `~/.config/Kiro/User/globalStorage/kiro.kiroagent/` | override do root das sessões IDE (frente Q) |
+| `KIRO_DASH_NO_IDE_SESSIONS` | unset | desabilita leitura de sessões IDE (testes/debug) |
 | `KIRO_DASH_NO_BANNER` | unset | suprime banner de onboarding sugerindo Kiro IDE |
 | `XDG_CONFIG_HOME` | `~/.config` | padrão XDG; muda raiz do `kiro-dash/config.toml` |
 | `XDG_CACHE_HOME` | `~/.cache` | padrão XDG; muda raiz do cache e do `banner_state.json` |
@@ -389,15 +445,19 @@ métricas durante a conversa, sem precisar abrir terminal.
 
 **Tools expostas:**
 
-| Tool | Retorna |
-|---|---|
-| `today_summary` | Agregado do dia local |
-| `active_sessions` | Sessões com lockfile no momento |
-| `session_details(prefix)` | Drill-down (estrutural; sem conteúdo) |
-| `account_info` | Conta, profile ARN, billing tier |
-| `top_projects(days, limit)` | Top projetos por créditos |
-| `top_models(days, limit)` | Top modelos por créditos |
-| `usage_state` | Billing autoritativo do servidor via Kiro IDE (Wave 6) |
+| Tool | Retorna | Aceita `source` |
+|---|---|---|
+| `today_summary` | Agregado do dia local | — (frente R) |
+| `active_sessions` | Sessões em curso (lock CLI ou execution.status=running IDE) | ✓ `cli`/`ide`/`all` |
+| `session_details(prefix)` | Drill-down (estrutural; sem conteúdo) | ✓ `auto`/`cli`/`ide` |
+| `account_info` | Conta, profile ARN, billing tier | — |
+| `top_projects(days, limit)` | Top projetos por créditos | — (frente R) |
+| `top_models(days, limit)` | Top modelos por créditos | — (frente R) |
+| `usage_state` | Billing autoritativo do servidor via Kiro IDE (Wave 6/P) | — |
+
+Tools que aceitam `source` retornam um campo extra `source` em cada
+sessão (`"cli"` ou `"ide"`), permitindo ao agente caller distinguir a
+fonte sem heurística adicional.
 
 **Registro no Kiro CLI** (em `~/.kiro/agents/<seu-agent>.json`):
 

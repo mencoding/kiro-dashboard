@@ -92,6 +92,54 @@ from kiro_dash.sources import Sources
 console = Console()
 
 
+# ─── helpers multi-source (Wave 6 frente Q) ──────────────────────────────
+
+
+SOURCE_CHOICES = ["cli", "ide", "all"]
+
+
+def _collect_sessions_by_source(
+    source: str, sources: Sources | None = None
+) -> list[Session]:
+    """Coleta sessões da fonte pedida (``cli`` / ``ide`` / ``all``).
+
+    ``cli`` usa ``load_all_sessions`` (CliJsonBackend), ``ide`` usa
+    ``IdeSessionBackend.list_sessions``. ``all`` concatena (sem dedup —
+    isso é trabalho da frente R).
+    """
+    out: list[Session] = []
+    if source in ("cli", "all"):
+        out.extend(load_all_sessions())
+    if source in ("ide", "all"):
+        srcs = sources if sources is not None else Sources.detect()
+        if srcs.ide_sessions is not None:
+            out.extend(srcs.ide_sessions.list_sessions())
+    return out
+
+
+def _find_session_by_prefix_in_ide(
+    prefix: str, sources: Sources | None = None
+) -> Session | None:
+    """Resolve prefixo de session_id em sessões IDE.
+
+    Aceita prefixo do raw uuid (``5e551001-1...``) ou do composto
+    (``ide-sessions:5e55...``). Retorna ``None`` se zero matches ou
+    ambíguo (>1 match).
+    """
+    srcs = sources if sources is not None else Sources.detect()
+    if srcs.ide_sessions is None:
+        return None
+    matches: list[Session] = []
+    for s in srcs.ide_sessions.list_sessions():
+        composite = s.session_id
+        raw = composite.split(":", 1)[-1] if ":" in composite else composite
+        if raw.startswith(prefix) or composite.startswith(prefix):
+            matches.append(s)
+    if len(matches) == 1:
+        return matches[0]
+    return None
+
+
 # ─── helpers de formatação ────────────────────────────────────────────────
 
 
@@ -467,18 +515,51 @@ def compare(a_str: str, b_str: str) -> None:
 
 @main.command()
 @click.argument("session_id_prefix")
-def session(session_id_prefix: str) -> None:
-    """Drill-down de uma sessão por prefixo de session_id."""
-    path = find_session_by_prefix(session_id_prefix)
-    if path is None:
+@click.option(
+    "--source",
+    default="auto",
+    type=click.Choice(["cli", "ide", "auto"]),
+    help="Fonte: cli, ide ou auto (default — tenta ambos).",
+)
+def session(session_id_prefix: str, source: str) -> None:
+    """Drill-down de uma sessão por prefixo de session_id.
+
+    Se ``--source=auto`` (default), tenta resolver em ambas as fontes
+    e relata ambiguidade. ``--source=cli`` força o backend CLI;
+    ``--source=ide`` força o backend IDE.
+    """
+    s: Session | None = None
+    cli_match: Session | None = None
+    ide_match: Session | None = None
+
+    if source in ("cli", "auto"):
+        path = find_session_by_prefix(session_id_prefix)
+        if path is not None:
+            cli_match = load_session_file(path)
+
+    if source in ("ide", "auto"):
+        ide_match = _find_session_by_prefix_in_ide(session_id_prefix)
+
+    if source == "cli":
+        s = cli_match
+    elif source == "ide":
+        s = ide_match
+    else:  # auto
+        if cli_match and ide_match:
+            console.print(
+                f"[red]Prefixo '{session_id_prefix}' ambíguo — match em CLI E IDE."
+                f"[/red]\n"
+                f"  CLI: {cli_match.session_id[:8]}  ({cli_match.title or '—'})\n"
+                f"  IDE: {ide_match.session_id}  ({ide_match.title or '—'})\n"
+                f"[dim]Use --source cli ou --source ide para desambiguar.[/dim]"
+            )
+            raise SystemExit(1)
+        s = cli_match or ide_match
+
+    if s is None:
         console.print(
             f"[red]Sessão '{session_id_prefix}' não encontrada ou prefixo ambíguo.[/red]"
         )
-        raise SystemExit(1)
-
-    s = load_session_file(path)
-    if s is None:
-        console.print(f"[red]Falha ao parsear {path.name}.[/red]")
         raise SystemExit(1)
 
     # Cabeçalho
@@ -530,9 +611,14 @@ def session(session_id_prefix: str) -> None:
     table.add_column("end_reason")
 
     for i, t in enumerate(s.turns, start=1):
+        if t.end_timestamp is None:
+            # Turn em curso (IDE running): sem timestamp final
+            ts_str = "● running"
+        else:
+            ts_str = t.end_timestamp.astimezone().strftime("%H:%M:%S")
         table.add_row(
             str(i),
-            t.end_timestamp.astimezone().strftime("%H:%M:%S"),
+            ts_str,
             t.agent_name or "?",
             _fmt_duration(t.duration),
             _fmt_credits(t.credits),
@@ -725,9 +811,23 @@ def models(window: str, days: int | None, limit: int, agent: str | None) -> None
 @main.command()
 @click.option("--limit", default=20, type=int, help="N últimas sessões (default 20).")
 @click.option("--agent", default=None, help="Filtra por agent_name.")
-def recent(limit: int, agent: str | None) -> None:
+@click.option(
+    "--source",
+    default="cli",
+    type=click.Choice(SOURCE_CHOICES),
+    help="Fonte de sessões: cli (default, retro-compat), ide, ou all (concat).",
+)
+@click.option(
+    "--show-source",
+    is_flag=True,
+    default=False,
+    help="Mostra coluna source no output (auto-on quando --source all).",
+)
+def recent(
+    limit: int, agent: str | None, source: str, show_source: bool
+) -> None:
     """Últimas N sessões ordenadas por updated_at desc, ativas marcadas com ●."""
-    sessions = load_all_sessions()
+    sessions = _collect_sessions_by_source(source)
     if agent is not None:
         sessions = [s for s in sessions if s.agent_name == agent]
     if not sessions:
@@ -736,8 +836,16 @@ def recent(limit: int, agent: str | None) -> None:
 
     sessions = sorted(sessions, key=lambda s: s.updated_at, reverse=True)[:limit]
 
-    table = Table(title=f"Últimas {len(sessions)} sessões", expand=False, header_style="bold")
+    show_source_col = show_source or source == "all"
+    title_suffix = f" (source={source})" if source != "cli" else ""
+    table = Table(
+        title=f"Últimas {len(sessions)} sessões{title_suffix}",
+        expand=False,
+        header_style="bold",
+    )
     table.add_column("sid")
+    if show_source_col:
+        table.add_column("source")
     table.add_column("título", overflow="fold")
     table.add_column("agent")
     table.add_column("modelo")
@@ -746,17 +854,25 @@ def recent(limit: int, agent: str | None) -> None:
     table.add_column("atualizada")
 
     for s in sessions:
-        sid = f"{s.session_id[:8]}{' ●' if s.is_active else ''}"
+        # sid composto vem como 'ide-sessions:5e551001...'; raw 8 chars
+        raw_id = s.session_id.split(":", 1)[-1]
+        sid = f"{raw_id[:8]}{' ●' if s.is_active else ''}"
+        source_label = "ide" if ":" in s.session_id else "cli"
         title = (s.title or "—")[:60]
-        table.add_row(
-            sid,
-            title,
-            s.agent_name or "?",
-            s.model_id,
-            str(len(s.turns)),
-            _fmt_credits(s.total_credits),
-            _fmt_relative_time(s.updated_at),
+        row = [sid]
+        if show_source_col:
+            row.append(source_label)
+        row.extend(
+            [
+                title,
+                s.agent_name or "?",
+                s.model_id,
+                str(len(s.turns)),
+                _fmt_credits(s.total_credits),
+                _fmt_relative_time(s.updated_at),
+            ]
         )
+        table.add_row(*row)
 
     console.print(table)
 
@@ -1174,34 +1290,79 @@ def audit() -> None:
 
 
 @audit.command("running")
-def audit_running() -> None:
+@click.option(
+    "--source",
+    default="cli",
+    type=click.Choice(SOURCE_CHOICES),
+    help="Fonte de sessões: cli (default), ide ou all.",
+)
+def audit_running(source: str) -> None:
     """Lista sessões com turn em curso AGORA."""
-    sessions = load_all_sessions()
-    runs = running_sessions(sessions)
+    runs: list[Session] = []
+    if source in ("cli", "all"):
+        sessions = load_all_sessions()
+        runs.extend(running_sessions(sessions))
+    if source in ("ide", "all"):
+        srcs = Sources.detect()
+        if srcs.ide_sessions is not None:
+            ide_running = srcs.ide_sessions.running_sessions()
+            runs.extend(ide_running)
+
     if not runs:
         console.print("[dim]Nenhuma sessão em curso.[/dim]")
         return
 
-    table = Table(title="Sessões em curso", show_header=True)
-    for col, justify in (
-        ("sid", "left"), ("agent", "left"), ("modelo", "left"),
-        ("cwd", "left"), ("turns", "right"), ("idade", "right"),
-        ("PID", "right"),
-    ):
+    show_source_col = source == "all"
+    title_suffix = f" (source={source})" if source != "cli" else ""
+    table = Table(title=f"Sessões em curso{title_suffix}", show_header=True)
+    cols = [
+        ("sid", "left"),
+    ]
+    if show_source_col:
+        cols.append(("source", "left"))
+    cols.extend(
+        [
+            ("agent", "left"),
+            ("modelo", "left"),
+            ("cwd", "left"),
+            ("turns", "right"),
+            ("idade", "right"),
+            ("PID", "right"),
+        ]
+    )
+    for col, justify in cols:
         table.add_column(col, justify=justify)
 
     now = datetime.now(timezone.utc)
     for s in runs:
-        info = read_lock(s.session_id)
-        pid_str = str(info.pid) if info else "?"
-        age_str = "?"
-        if info:
-            secs = int((now - info.started_at).total_seconds())
+        is_ide = ":" in s.session_id
+        raw_id = s.session_id.split(":", 1)[-1]
+        if is_ide:
+            # Sem PID/lock no IDE; usar updated_at como age proxy
+            pid_str = "—"
+            secs = int((now - s.updated_at).total_seconds())
             age_str = _fmt_age(secs)
-        table.add_row(
-            s.session_id[:8], s.agent_name or "?", s.model_id,
-            s.cwd or "—", str(len(s.turns)), age_str, pid_str,
+        else:
+            info = read_lock(s.session_id)
+            pid_str = str(info.pid) if info else "?"
+            age_str = "?"
+            if info:
+                secs = int((now - info.started_at).total_seconds())
+                age_str = _fmt_age(secs)
+        row = [raw_id[:8]]
+        if show_source_col:
+            row.append("ide" if is_ide else "cli")
+        row.extend(
+            [
+                s.agent_name or "?",
+                s.model_id,
+                s.cwd or "—",
+                str(len(s.turns)),
+                age_str,
+                pid_str,
+            ]
         )
+        table.add_row(*row)
     console.print(table)
 
 

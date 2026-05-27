@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 
 from kiro_dash.backends import Backend, Capability
 from kiro_dash.backends.cli_json import CliJsonBackend
+from kiro_dash.backends.ide_sessions import IdeSessionBackend
 from kiro_dash.backends.ide_state import IdeStateBackend
 
 
@@ -43,14 +44,15 @@ class Sources:
         *,
         cli_json: Backend | None | type[None] = ...,  # type: ignore[assignment]
         ide_state: Backend | None | type[None] = ...,  # type: ignore[assignment]
+        ide_sessions: Backend | None | type[None] = ...,  # type: ignore[assignment]
     ) -> "Sources":
         """Detecta backends disponíveis no ambiente atual.
 
         Parâmetros (todos opcionais, úteis em testes):
 
-        - ``cli_json``, ``ide_state``: passe instância para forçar (ou
-          ``None`` para marcar como ausente). ``...`` (default) instancia
-          com defaults e checa ``is_available()``.
+        - ``cli_json``, ``ide_state``, ``ide_sessions``: passe instância
+          para forçar (ou ``None`` para marcar como ausente). ``...``
+          (default) instancia com defaults e checa ``is_available()``.
         """
         # CLI JSON
         if cli_json is ...:  # type: ignore[comparison-overlap]
@@ -66,9 +68,19 @@ class Sources:
         else:
             ide_state_resolved = ide_state  # type: ignore[assignment]
 
+        # IDE Sessions (Wave 6 frente Q)
+        if ide_sessions is ...:  # type: ignore[comparison-overlap]
+            candidate_sess = IdeSessionBackend()
+            ide_sessions_resolved: Backend | None = (
+                candidate_sess if candidate_sess.is_available() else None
+            )
+        else:
+            ide_sessions_resolved = ide_sessions  # type: ignore[assignment]
+
         return cls(
             cli_json=cli_json_resolved,
             ide_state=ide_state_resolved,
+            ide_sessions=ide_sessions_resolved,
         )
 
     def all_backends(self) -> list[Backend]:
@@ -143,7 +155,24 @@ class Sources:
             lines.append(f"  ide-state      —  (Kiro IDE não detectado)")
 
         # IDE Sessions (frente Q da Wave 6)
-        lines.append(f"  ide-sessions   —  (frente Q da Wave 6)")
+        if self.ide_sessions is not None:
+            ws_count = 0
+            try:
+                ws_count = len(self.ide_sessions.list_workspaces())  # type: ignore[attr-defined]
+            except (AttributeError, OSError):
+                pass
+            age = self.ide_sessions.data_age()
+            if age is not None:
+                level = freshness_for(age)
+                ws_word = "workspace" if ws_count == 1 else "workspaces"
+                lines.append(
+                    f"  ide-sessions   ✓  IdeSessionBackend ({ws_count} {ws_word} · "
+                    f"{format_age(age)} atrás · {level.value})"
+                )
+            else:
+                lines.append(f"  ide-sessions   ✓  IdeSessionBackend")
+        else:
+            lines.append(f"  ide-sessions   —  (Kiro IDE sem sessões — abra-o para popular)")
 
         # CLI sqlite (watchlist)
         lines.append(f"  cli-sqlite     —  (watchlist; conversations_v2 vazia)")
