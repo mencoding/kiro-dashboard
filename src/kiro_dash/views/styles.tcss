@@ -15,6 +15,17 @@ TabbedContent {
     height: 1fr;
 }
 
+/* TodayTab tem layout horizontal com 2 colunas; sem regra explícita,
+   widgets do Vertical interno renderizam 1 char cortado à esquerda. */
+TodayTab Static {
+    width: 100%;
+    margin: 0 1;
+}
+
+TodayTab DataTable {
+    margin: 0 1;
+}
+
 #cycle-banner {
     height: auto;
     padding: 0 1;
