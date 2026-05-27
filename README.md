@@ -80,6 +80,33 @@ Tools expostas:
 **Privacidade:** nenhuma tool expõe conteúdo de mensagens — apenas
 metadata estrutural (mesma superfície da CLI).
 
+## TUI interativa
+
+```bash
+kiro-dash tui
+```
+
+Atalhos:
+
+| Tecla | Ação |
+|---|---|
+| `1` | Aba Now (sessões ativas) |
+| `2` | Aba Today |
+| `3` | Aba Projects |
+| `4` | Aba Models |
+| `5` | Aba Tools |
+| `6` | Aba Session (com seleção e drill-down) |
+| `←` / `→` | Navegar abas (bind padrão do Textual) |
+| `r` | Refresh manual da aba ativa |
+| `?` | Ajuda |
+| `q` | Sair |
+
+**Auto-refresh seletivo** (mesmo padrão do `claude-dash` em produção):
+- **Now** atualiza sozinha a cada 2s (`NOW_REFRESH_SEC = 2.0`).
+- Demais abas são snapshot — pressione `r` para recomputar quando quiser.
+- Razão: Today/Tools/Session re-leem todas as sessões ou os transcripts
+  `.jsonl` inteiros; refresh contínuo seria caro.
+
 ## Licença
 
 Privado — uso pessoal de Leonardo Menzani.
