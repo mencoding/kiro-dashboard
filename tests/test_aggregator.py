@@ -74,3 +74,43 @@ def test_aggregate_tools_in_window_excludes_old_files(tmp_path):
 
     aggs = aggregate_tools_in_window(tmp_path, hours=24)
     assert aggs == []
+
+
+from pathlib import Path
+from unittest.mock import patch
+
+from kiro_dash.aggregator import aggregate_by_project
+
+
+def test_aggregate_by_project_consolida_subpastas_em_um_label(tmp_path):
+    """Sessões em subpastas do mesmo projeto consolidam num único label."""
+    with patch.object(Path, "home", return_value=tmp_path):
+        s1 = make_session(
+            session_id="aaaa",
+            cwd=str(tmp_path / "iris/projetos/institucional/auto-normas"),
+            turns=[make_turn(end_timestamp=datetime.now(timezone.utc), credits=1.0)],
+        )
+        s2 = make_session(
+            session_id="bbbb",
+            cwd=str(tmp_path / "iris/projetos/institucional/auto-normas/workspace"),
+            turns=[make_turn(end_timestamp=datetime.now(timezone.utc), credits=2.0)],
+        )
+        s3 = make_session(
+            session_id="cccc",
+            cwd=str(tmp_path / "iris/projetos/pessoal/docente-ifsp"),
+            turns=[make_turn(end_timestamp=datetime.now(timezone.utc), credits=4.0)],
+        )
+
+        pairs = [
+            (s, t)
+            for s in (s1, s2, s3)
+            for t in s.turns
+        ]
+
+        aggs = aggregate_by_project(pairs)
+
+    by_label = {a.label: a for a in aggs}
+    assert "institucional/auto-normas" in by_label
+    assert by_label["institucional/auto-normas"].credits == 3.0
+    assert by_label["institucional/auto-normas"].sessions == 2
+    assert by_label["pessoal/docente-ifsp"].credits == 4.0

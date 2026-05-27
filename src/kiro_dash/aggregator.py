@@ -127,6 +127,13 @@ def aggregate_by_cwd(pairs: list[tuple[Session, Turn]]) -> list[Aggregate]:
     return _aggregate_pairs(pairs, key=lambda s, t: s.cwd or "?")
 
 
+def aggregate_by_project(pairs: list[tuple[Session, Turn]]) -> list[Aggregate]:
+    """Agrega por ``project_label(s.cwd)`` (heurística — Frente G)."""
+    from kiro_dash.project import project_label
+
+    return _aggregate_pairs(pairs, key=lambda s, t: project_label(s.cwd))
+
+
 def aggregate_by_session(pairs: list[tuple[Session, Turn]]) -> list[Aggregate]:
     """Agrega por ``session_id`` (label = sid curto + título)."""
     def label(sid: str) -> str:
@@ -168,6 +175,38 @@ def turns_in_cycle(
             if t.end_timestamp >= start_utc:
                 out.append((s, t))
     return out
+
+
+def resolve_window(
+    sessions: list[Session],
+    window: str,
+    *,
+    cycle_start: date,
+) -> list[tuple[Session, Turn]]:
+    """Resolve uma janela nomeada para pares (sessão, turn).
+
+    Aceita: today, week, month, cycle, all, ou string inteiro (dias).
+    """
+    w = window.strip().lower()
+    if w == "today":
+        return turns_in_local_day(sessions)
+    if w == "week":
+        return turns_in_last_days(sessions, days=7)
+    if w == "month":
+        return turns_in_last_days(sessions, days=30)
+    if w == "cycle":
+        return turns_in_cycle(sessions, cycle_start)
+    if w == "all":
+        return [(s, t) for s in sessions for t in s.turns]
+    try:
+        n = int(w)
+    except ValueError as exc:
+        raise ValueError(
+            f"window inválido: '{window}'. Use today/week/month/cycle/all ou um inteiro de dias."
+        ) from exc
+    if n < 0:
+        raise ValueError(f"window negativo: {n}")
+    return turns_in_last_days(sessions, days=n)
 
 
 def balance_in_cycle(

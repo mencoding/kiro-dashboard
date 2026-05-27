@@ -176,6 +176,42 @@ Atalhos:
 - Razão: Today/Tools/Session re-leem todas as sessões ou os transcripts
   `.jsonl` inteiros; refresh contínuo seria caro.
 
+## Mapeamento de projetos (heurística)
+
+O `kiro-dash` consolida sessões em "projetos conceituais" mapeando o
+`cwd` da sessão em um label. Regras (na ordem):
+
+| Padrão de path | Label |
+|---|---|
+| `~/iris/projetos/<categoria>/<projeto>/...` (categorias: pessoal, profissional, institucional, concluidos) | `<categoria>/<projeto>` |
+| `~/iris/projetos/normativos/...` | `iris-normativos` |
+| `~/iris/projetos/referencias/...` | `iris-referencias` |
+| `~/iris/projetos/...` (sem categoria) | `iris-projetos` |
+| `~/iris/...` | `iris-geral` |
+| `~/Desenvolvimento/ifsp/<grupo>/<repo>/...` | `ifsp/<grupo>/<repo>` |
+| `~/Desenvolvimento/<conta>/<repo>/...` | `<conta>/<repo>` |
+| `~/nyx/...` | `nyx` |
+| Outros sob `~` | path relativo ao home |
+| Fora do home | path literal |
+
+Override declarativo (`config.toml` com aliases custom) está planejado
+para Wave 3.
+
+## Filtros temporais
+
+Comandos `today`, `projects` e `models` aceitam `--window`:
+
+```bash
+kiro-dash projects --window today        # só hoje
+kiro-dash projects --window week         # últimos 7 dias (default)
+kiro-dash projects --window month        # últimos 30 dias
+kiro-dash projects --window cycle        # desde cycle_start do plano
+kiro-dash projects --window all          # tudo desde sempre
+kiro-dash projects --window 14           # últimos 14 dias
+```
+
+`--days N` segue funcionando como atalho legacy (override de `--window`).
+
 ## Licença
 
 Privado — uso pessoal de Leonardo Menzani.

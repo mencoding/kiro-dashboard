@@ -90,3 +90,20 @@ def test_recent_marks_active_sessions():
     # Pelo menos um marcador visual para 'aaaa' (que tem is_active=True)
     # — usamos '●' como marcador (igual ao `session`)
     assert "●" in result.output
+
+
+def test_projects_window_all_inclui_tudo():
+    with patch("kiro_dash.cli.load_all_sessions", return_value=_fake_sessions()):
+        runner = CliRunner()
+        result = runner.invoke(main, ["projects", "--window", "all"])
+    assert result.exit_code == 0
+    # Sessão de 15d entra com window=all
+    assert "8.00" in result.output
+
+
+def test_projects_window_invalid_returns_error():
+    with patch("kiro_dash.cli.load_all_sessions", return_value=_fake_sessions()):
+        runner = CliRunner()
+        result = runner.invoke(main, ["projects", "--window", "ontem"])
+    assert result.exit_code != 0
+    assert "window" in result.output.lower()

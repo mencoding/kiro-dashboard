@@ -27,9 +27,11 @@ from kiro_dash.aggregator import (
     aggregate_by_agent,
     aggregate_by_cwd,
     aggregate_by_model,
+    aggregate_by_project,
     aggregate_by_session,
     aggregate_tools_in_window,
     balance_in_cycle,
+    resolve_window,
     total_credits,
     turns_in_last_days,
     turns_in_local_day,
@@ -205,7 +207,7 @@ def today(day_str: str | None) -> None:
 
     console.print(_aggregates_table("Por modelo", aggregate_by_model(pairs), "modelo"))
     console.print(_aggregates_table("Por agent", aggregate_by_agent(pairs), "agent"))
-    console.print(_aggregates_table("Por projeto (cwd)", aggregate_by_cwd(pairs), "cwd"))
+    console.print(_aggregates_table("Por projeto", aggregate_by_project(pairs), "projeto"))
     console.print(_aggregates_table("Por sessão", aggregate_by_session(pairs), "sessão"))
 
 
@@ -382,45 +384,77 @@ def now(refresh: float) -> None:
 
 
 @main.command()
-@click.option("--days", default=7, type=int, help="Janela em dias (default 7).")
-@click.option("--limit", default=10, type=int, help="Top N projetos (default 10).")
-def projects(days: int, limit: int) -> None:
-    """Top projetos (cwd) por créditos consumidos numa janela de N dias."""
+@click.option(
+    "--window",
+    default="week",
+    help="Janela: today | week | month | cycle | all | <int dias> (default 'week').",
+)
+@click.option("--days", default=None, type=int, help="(legacy) override em dias.")
+@click.option("--limit", default=10, type=int, help="Top N (default 10).")
+def projects(window: str, days: int | None, limit: int) -> None:
+    """Top projetos (heurística) por créditos numa janela nomeada ou em N dias."""
     sessions = load_all_sessions()
-    pairs = turns_in_last_days(sessions, days=days)
+    plan_cfg = load_plan(default_config_path())
+    try:
+        if days is not None:
+            pairs = turns_in_last_days(sessions, days=days)
+            window_label = f"últimos {days}d"
+        else:
+            pairs = resolve_window(sessions, window, cycle_start=plan_cfg.cycle_start)
+            window_label = f"janela={window}"
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise SystemExit(2)
+
     if not pairs:
-        console.print(f"[yellow]Sem turns nos últimos {days} dias.[/yellow]")
+        console.print(f"[yellow]Sem turns na janela ({window_label}).[/yellow]")
         return
 
-    aggs = aggregate_by_cwd(pairs)[:limit]
+    aggs = aggregate_by_project(pairs)[:limit]
     total = total_credits(pairs)
 
     header = Text()
-    header.append(f"últimos {days}d  ", style="bold")
+    header.append(f"{window_label}  ", style="bold")
     header.append(f"{_fmt_credits(total)} créditos", style="bold green")
     console.print(Panel(header, title="Projetos", expand=False))
-    console.print(_aggregates_table("Por projeto (cwd)", aggs, "cwd"))
+    console.print(_aggregates_table("Por projeto", aggs, "projeto"))
 
 
 # ─── models ───────────────────────────────────────────────────────────────
 
 
 @main.command()
-@click.option("--days", default=7, type=int, help="Janela em dias (default 7).")
-@click.option("--limit", default=10, type=int, help="Top N modelos (default 10).")
-def models(days: int, limit: int) -> None:
-    """Top modelos por créditos consumidos numa janela de N dias."""
+@click.option(
+    "--window",
+    default="week",
+    help="Janela: today | week | month | cycle | all | <int dias> (default 'week').",
+)
+@click.option("--days", default=None, type=int, help="(legacy) override em dias.")
+@click.option("--limit", default=10, type=int, help="Top N (default 10).")
+def models(window: str, days: int | None, limit: int) -> None:
+    """Top modelos por créditos numa janela nomeada ou em N dias."""
     sessions = load_all_sessions()
-    pairs = turns_in_last_days(sessions, days=days)
+    plan_cfg = load_plan(default_config_path())
+    try:
+        if days is not None:
+            pairs = turns_in_last_days(sessions, days=days)
+            window_label = f"últimos {days}d"
+        else:
+            pairs = resolve_window(sessions, window, cycle_start=plan_cfg.cycle_start)
+            window_label = f"janela={window}"
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise SystemExit(2)
+
     if not pairs:
-        console.print(f"[yellow]Sem turns nos últimos {days} dias.[/yellow]")
+        console.print(f"[yellow]Sem turns na janela ({window_label}).[/yellow]")
         return
 
     aggs = aggregate_by_model(pairs)[:limit]
     total = total_credits(pairs)
 
     header = Text()
-    header.append(f"últimos {days}d  ", style="bold")
+    header.append(f"{window_label}  ", style="bold")
     header.append(f"{_fmt_credits(total)} créditos", style="bold green")
     console.print(Panel(header, title="Modelos", expand=False))
     console.print(_aggregates_table("Por modelo", aggs, "modelo"))
