@@ -37,6 +37,7 @@ dev = [
 [project.scripts]
 kiro-dash = "kiro_dash.cli:main"
 kiro-dash-mcp = "kiro_dash.mcp_server:main"
+kiro-dash-sync = "kiro_dash.sync:main"
 
 [project.urls]
 Homepage = "https://github.com/mencoding/kiro-dashboard"
