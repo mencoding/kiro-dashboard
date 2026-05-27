@@ -318,6 +318,34 @@ HTTP status), não vaza prompts.
 Na TUI, aba Tools (`5`): seleção de linha (↑/↓ + Enter) abre painel
 inferior com top 5 erros recentes.
 
+## Histórico (snapshots diários)
+
+Snapshots imutáveis de uso por dia local, em
+`~/.local/share/kiro-dash/snapshots/<YYYY-MM-DD>.<host>.json`.
+
+### Geração
+
+- **Lazy + self-healing:** comandos consumidores (`today`, `projects`,
+  `models`) chamam silenciosamente `ensure_snapshots_up_to(ontem)` no
+  início. Dias sem snapshot são gerados automaticamente.
+- **Manual:**
+  ```bash
+  kiro-dash snapshot                  # roda lazy explícito
+  kiro-dash snapshot 2026-05-16       # gera/garante dia específico
+  kiro-dash snapshot 2026-05-16 --force  # sobrescreve
+  ```
+
+### Multi-host
+
+Snapshots de hosts distintos coexistem (`2026-05-16.predator.json` +
+`2026-05-16.work.json`). Queries somam todos os hosts do mesmo dia.
+
+### Janela stateless
+
+Hoje e ontem **não** viram snapshot persistido pelo lazy — sempre
+re-lidos dos arquivos `~/.kiro/sessions/cli/*.json` originais. Snapshot
+só fecha em **D-2 ou anterior**.
+
 ## Notas técnicas
 
 ### Clock injetável
