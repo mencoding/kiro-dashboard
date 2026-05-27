@@ -19,7 +19,7 @@ from kiro_dash.aggregator import (
 )
 from kiro_dash.config import load_aliases, default_config_path
 from kiro_dash.models import Session
-from kiro_dash.parser import load_all_sessions
+from kiro_dash.views.tabs._helpers import collect_for_tab, get_current_source
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,12 +98,15 @@ class TodayTab(Container):
         self.refresh_snapshot()
 
     def refresh_snapshot(self) -> None:
-        sessions = load_all_sessions()
+        sessions = collect_for_tab(self)
         snap = build_today_snapshot(sessions)
 
+        source = get_current_source(self)
+        source_tag = f"[dim]·[/dim] [b]source={source}[/b] " if source != "all" else ""
         self.query_one("#today-header", Static).update(
             f"[b green]{snap.total_credits:.2f}[/b green] créditos  "
-            f"[dim]{snap.total_turns} turns / {snap.total_sessions} sessões[/dim]"
+            f"[dim]{snap.total_turns} turns / {snap.total_sessions} sessões[/dim] "
+            f"{source_tag}"
         )
 
         # Agregados de 4 colunas (label, créditos, turns, sessões)

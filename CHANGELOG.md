@@ -5,6 +5,63 @@ Todas as mudanças notáveis neste projeto serão documentadas aqui.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 e o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [0.7.1] - 2026-05-28
+
+Wave 8 — refinamentos visuais TUI/CLI. Sem mudanças de API
+breaking; foco em UX e legibilidade.
+
+### Adicionado
+
+- **Filtro real por source nas tabs da TUI (T1-W8)** —
+  `views.tabs._helpers.collect_for_tab` faz cada tab ler
+  `self.app.current_source`. Tecla `s` agora filtra de fato as
+  abas Now/Today/Projects/Models/Tools (antes era só estado
+  visual). Headers mostram `source=X` quando ≠ all.
+- **Card de saldo no Now tab (T2-W8)** —
+  `_build_balance_card(sources)` renderiza saldo IDE com
+  `bar_inline` (30 width), cor de pct (verde<80, amarelo 80-95,
+  vermelho>95) E cor de freshness (verde<3h, amarelo 3-12h,
+  vermelho 12-24h, cinza>24h). Card oculto se IDE indisponível
+  ou state read falha.
+- **Progress bar no `balance` CLI (T3-W8)** — barra wider (40
+  cells) com tick line marcando posições 80% (yellow) e 95%
+  (red), tick label mostrando 0% / 80% / 95% / 100%. IDE com
+  overage>0 ganha barra dedicada de 20 cells em red.
+- **`whoami` como tabela rich (T4-W8)** —
+  `Sources.summary_rows()` retorna tuplas tipadas
+  `(slug, symbol, color, detail)`. Painel "Fontes detectadas"
+  vira tabela rich com colunas source/status/descrição.
+  `summary_lines()` preservado para compat.
+- **Esquema de cores TUI (T5-W8)** — `styles.tcss` reescrito
+  com paleta consistente: tabs ativas com `$accent` + bold,
+  headers das tabs com `$boost` background, balance card com
+  border round primary, tools detail panel com border round
+  accent.
+- **Help modal completo (T6-W8)** — `HelpModal` Textual
+  ModalScreen com tabela 11×3 (tecla / ação / contexto).
+  `action_help` (`?`) abre via `push_screen`. ESC ou `q` fecha.
+- **Empty states informativos (T7-W8)** — `recent`/`today`/
+  `tools`/`session` mostram hints contextuais quando vazio
+  (ex.: "Tente --source all" ou "Aumente --hours").
+- **`aggregate_tools_in_window_by_source(source, ...)`** —
+  dispatcher que escolhe entre `aggregate_tools_in_window` (CLI),
+  `aggregate_tools_in_window_ide` ou `aggregate_tools_in_window_combined`.
+
+### Modificado
+
+- Tecla `s` na TUI agora **dispara refresh em todas as tabs**
+  após cycle (`app._refresh_all_tabs()`).
+- `_render_balance_from_local_estimate` consome via
+  `collect_sessions("all")` em vez de `load_all_sessions()`.
+
+### Diferido para Wave 9 (futuro)
+
+- Filtro source persistente entre execuções (config
+  `[tui].default_source`).
+- Migração v1→v2 de snapshots reescrevendo arquivos no disco.
+- Animação de transição ao trocar source na TUI.
+- Theme dark/light alternável.
+
 ## [0.7.0] - 2026-05-28
 
 Wave 6 — suporte multi-backend (Kiro CLI + Kiro IDE) consolidado.

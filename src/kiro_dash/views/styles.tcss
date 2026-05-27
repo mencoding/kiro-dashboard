@@ -1,3 +1,5 @@
+/* kiro-dash TUI styles (T5-W8) — paleta consistente, contraste melhor */
+
 Screen {
     background: $surface;
 }
@@ -5,26 +7,72 @@ Screen {
 Header {
     background: $primary;
     color: $text;
+    text-style: bold;
 }
 
 Footer {
     background: $primary-darken-1;
+    color: $text;
 }
 
 TabbedContent {
     height: 1fr;
 }
 
-/* TodayTab tem layout horizontal com 2 colunas; sem regra explícita,
-   widgets do Vertical interno renderizam 1 char cortado à esquerda. */
+/* Tab ativa com destaque */
+Tabs > Tab.-active {
+    text-style: bold;
+    background: $accent;
+}
+
+/* ── Card de saldo no Now tab (T2-W8) ── */
+
+#now-balance-card {
+    width: 100%;
+    margin: 0 1 1 1;
+    padding: 1 2;
+    border: round $primary;
+    height: auto;
+}
+
+#now-header {
+    width: 100%;
+    margin: 0 1;
+    padding: 0 1;
+    height: auto;
+}
+
+#now-table {
+    margin: 0 1;
+}
+
+/* ── TodayTab layout horizontal ── */
+
 TodayTab Static {
     width: 100%;
     margin: 0 1;
+    padding: 0 1;
 }
 
 TodayTab DataTable {
     margin: 0 1;
 }
+
+/* ── Headers das tabs ── */
+
+#today-header,
+#projects-header,
+#models-header,
+#tools-header {
+    width: 100%;
+    margin: 0 1;
+    padding: 0 1;
+    height: auto;
+    background: $boost;
+    color: $text;
+}
+
+/* ── Cycle banner / status banners ── */
 
 #cycle-banner {
     height: auto;
@@ -40,6 +88,8 @@ TodayTab DataTable {
 .danger {
     color: $error;
 }
+
+/* ── HistoryTab ── */
 
 HistoryTab Static {
     width: 100%;
@@ -64,3 +114,57 @@ HistoryTab Static {
     padding: 0 1;
     border: round $primary;
 }
+
+/* ── Tools tab detail panel ── */
+
+#tools-detail {
+    width: 100%;
+    margin: 0 1;
+    padding: 1 2;
+    border: round $accent;
+    height: auto;
+}
+
+/* ── Empty state hint (T7-W8) ── */
+
+.empty-state {
+    color: $text-muted;
+    text-style: italic;
+    padding: 2 4;
+    text-align: center;
+}
+
+/* ── Help modal (T6-W8) ── */
+
+HelpModal {
+    align: center middle;
+}
+
+#help-modal-body {
+    width: 70;
+    height: auto;
+    max-height: 80%;
+    background: $surface;
+    border: thick $accent;
+    padding: 1 2;
+}
+
+#help-title {
+    width: 100%;
+    text-align: center;
+    margin-bottom: 1;
+    height: auto;
+}
+
+#help-table {
+    width: 100%;
+    height: auto;
+    margin-bottom: 1;
+}
+
+#help-footer {
+    width: 100%;
+    height: auto;
+    text-align: center;
+}
+

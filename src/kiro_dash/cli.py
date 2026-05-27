@@ -267,12 +267,18 @@ def whoami() -> None:
         title += " (enterprise)"
     console.print(Panel(table, title=title, expand=False))
 
-    # Painel de fontes detectadas (Wave 6 — ADR-0001)
+    # Painel de fontes detectadas (Wave 6 — ADR-0001 ; T4-W8 vira tabela rich)
     sources = Sources.detect()
-    sources_table = Table(show_header=False, box=None, padding=(0, 1))
-    sources_table.add_column(style="dim")
-    for line in sources.summary_lines():
-        sources_table.add_row(line)
+    sources_table = Table(show_header=True, header_style="bold", box=None, padding=(0, 1))
+    sources_table.add_column("source", style="bold")
+    sources_table.add_column("status", justify="center")
+    sources_table.add_column("descrição", overflow="fold")
+    for slug, symbol, color, detail in sources.summary_rows():
+        sources_table.add_row(
+            slug,
+            Text(symbol, style=color),
+            Text(detail, style="dim" if symbol == "—" else "default"),
+        )
     console.print(
         Panel(sources_table, title="Fontes detectadas", expand=False)
     )
@@ -348,7 +354,13 @@ def today(day_str: str | None, agent: str | None) -> None:
     pairs = filter_by_agent(turns_in_local_day(sessions, d), agent)
 
     if not pairs:
-        console.print(f"[yellow]Nenhum turn registrado em {d.isoformat()} (local).[/yellow]")
+        hint = ""
+        if agent is not None:
+            hint = f"\n[dim]Filtro --agent {agent} ativo; remova-o para incluir todos os agents.[/dim]"
+        console.print(
+            f"[yellow]Nenhum turn registrado em {d.isoformat()} (local).[/yellow]"
+            f"{hint}"
+        )
         return
 
     total = total_credits(pairs)
@@ -548,7 +560,9 @@ def session(session_id_prefix: str, source: str) -> None:
 
     if s is None:
         console.print(
-            f"[red]Sessão '{session_id_prefix}' não encontrada ou prefixo ambíguo.[/red]"
+            f"[red]Sessão '{session_id_prefix}' não encontrada ou prefixo ambíguo.[/red]\n"
+            "[dim]Use 'kiro-dash recent --source all' para listar sessões disponíveis.\n"
+            "Tente um prefixo mais longo (8+ chars) se ambíguo.[/dim]"
         )
         raise SystemExit(1)
 
@@ -821,7 +835,16 @@ def recent(
     if agent is not None:
         sessions = [s for s in sessions if s.agent_name == agent]
     if not sessions:
-        console.print("[yellow]Nenhuma sessão encontrada.[/yellow]")
+        hint = ""
+        if source == "cli":
+            hint = "\n[dim]Tente --source all para incluir IDE, ou rode `kiro-cli chat` para criar sua primeira sessão.[/dim]"
+        elif source == "ide":
+            hint = "\n[dim]Abra o Kiro IDE e tenha uma conversa para popular as sessões. Sem IDE? Use --source cli.[/dim]"
+        else:
+            hint = "\n[dim]Nenhuma sessão em CLI nem IDE. Rode `kiro-cli chat` ou abra o Kiro IDE.[/dim]"
+        if agent is not None:
+            hint = f"\n[dim]Filtro --agent {agent} pode ser muito restrito; remova-o para ver todas.[/dim]" + hint
+        console.print(f"[yellow]Nenhuma sessão encontrada.[/yellow]{hint}")
         return
 
     sessions = sorted(sessions, key=lambda s: s.updated_at, reverse=True)[:limit]
@@ -885,7 +908,12 @@ def tools(hours: int, limit: int) -> None:
 
     aggs = aggregate_tools_in_window_combined(DEFAULT_SESSIONS_DIR, hours=hours)
     if not aggs:
-        console.print(f"[yellow]Nenhuma tool call nas últimas {hours}h.[/yellow]")
+        console.print(
+            f"[yellow]Nenhuma tool call nas últimas {hours}h.[/yellow]\n"
+            "[dim]Tools são extraídas de transcripts CLI (.jsonl) e de "
+            "execution.usageSummary do IDE. Aumente --hours ou tenha uma "
+            "sessão com Autopilot que execute tools.[/dim]"
+        )
         return
 
     aggs = aggs[:limit]
@@ -1158,24 +1186,51 @@ def _render_balance_from_ide(state, *, sources_summary_hint: bool) -> None:
     pct = state.percentage_used
     color = _balance_color(pct)
 
+    # T3-W8: barra wider (40) com tick visual em 80% e 95%
     bar = Text()
-    used_blocks = min(20, int(pct / 5))
+    bar_width = 40
+    used_blocks = min(bar_width, int(pct / 100.0 * bar_width))
     bar.append("█" * used_blocks, style=color)
-    bar.append("░" * (20 - used_blocks), style="dim")
+    bar.append("░" * (bar_width - used_blocks), style="dim")
+
+    # Tick line — marca 80% e 95% sob a barra
+    tick_line = Text()
+    pos_80 = int(0.80 * bar_width)
+    pos_95 = int(0.95 * bar_width)
+    for i in range(bar_width + 1):
+        if i == pos_80:
+            tick_line.append("│", style="yellow")
+        elif i == pos_95:
+            tick_line.append("│", style="red")
+        elif i == bar_width:
+            tick_line.append("┘", style="dim")
+        elif i == 0:
+            tick_line.append("└", style="dim")
+        else:
+            tick_line.append(" ")
+    tick_label = Text("0%", style="dim")
+    tick_label.append(" " * (pos_80 - 2), style="dim")
+    tick_label.append("80%", style="yellow")
+    tick_label.append(" " * (pos_95 - pos_80 - 3), style="dim")
+    tick_label.append("95%", style="red")
+    tick_label.append(" " * max(0, bar_width - pos_95 - 3 - 4), style="dim")
+    tick_label.append("100%", style="dim")
 
     table = Table(show_header=False, box=None, padding=(0, 1))
     table.add_column(style="dim")
     table.add_column()
     table.add_row(
         "Consumo",
-        f"{state.current_usage:.2f} / {state.usage_limit:.0f} {state.unit.lower()}",
+        f"[b]{state.current_usage:.2f}[/b] / {state.usage_limit:.0f} {state.unit.lower()}",
     )
     table.add_row(
         "Restante",
         f"{state.usage_limit - state.current_usage:.2f}",
     )
     table.add_row("Uso", Text(f"{pct:.2f}%", style=color))
-    table.add_row("Barra", bar)
+    table.add_row("", bar)
+    table.add_row("", tick_line)
+    table.add_row("", tick_label)
 
     # Reset
     days_to_reset = (state.reset_date - datetime.now(timezone.utc)).days
@@ -1185,8 +1240,17 @@ def _render_balance_from_ide(state, *, sources_summary_hint: bool) -> None:
     else:
         table.add_row("Reset em", reset_iso)
 
-    # Overage
+    # Overage com barra dedicada se houver
     if state.current_overages > 0:
+        overage_pct = (
+            state.current_overages / state.overage_cap * 100.0
+            if state.overage_cap > 0
+            else 0.0
+        )
+        overage_bar = Text()
+        ow_used = min(20, int(overage_pct / 5))
+        overage_bar.append("█" * ow_used, style="red")
+        overage_bar.append("░" * (20 - ow_used), style="dim")
         table.add_row(
             "Overage",
             Text(
@@ -1195,7 +1259,9 @@ def _render_balance_from_ide(state, *, sources_summary_hint: bool) -> None:
                 style="red",
             ),
         )
-    if state.overage_rate > 0:
+        table.add_row("", overage_bar)
+        table.add_row("", Text(f"cap: {state.overage_cap:.0f}", style="dim"))
+    if state.overage_rate > 0 and state.current_overages == 0:
         table.add_row(
             "Overage rate",
             f"{state.currency_symbol}{state.overage_rate:.2f} / {state.unit.lower()}"
@@ -1225,14 +1291,38 @@ def _render_balance_from_ide(state, *, sources_summary_hint: bool) -> None:
 def _render_balance_from_local_estimate() -> None:
     """Renderiza estimativa local (comportamento pré-Wave 6)."""
     p = load_plan(default_config_path())
-    sessions = load_all_sessions()
+    sessions = collect_sessions("all")
     bal = balance_in_cycle(sessions, p.cycle_start, monthly_credits=p.monthly_credits)
 
     color = _balance_color(bal["pct_used"])
+    # T3-W8: bar wider (40) + tick em 80%/95%
     bar = Text()
-    used_blocks = min(20, int(bal["pct_used"] / 5))
+    bar_width = 40
+    used_blocks = min(bar_width, int(bal["pct_used"] / 100.0 * bar_width))
     bar.append("█" * used_blocks, style=color)
-    bar.append("░" * (20 - used_blocks), style="dim")
+    bar.append("░" * (bar_width - used_blocks), style="dim")
+
+    tick_line = Text()
+    pos_80 = int(0.80 * bar_width)
+    pos_95 = int(0.95 * bar_width)
+    for i in range(bar_width + 1):
+        if i == pos_80:
+            tick_line.append("│", style="yellow")
+        elif i == pos_95:
+            tick_line.append("│", style="red")
+        elif i == bar_width:
+            tick_line.append("┘", style="dim")
+        elif i == 0:
+            tick_line.append("└", style="dim")
+        else:
+            tick_line.append(" ")
+    tick_label = Text("0%", style="dim")
+    tick_label.append(" " * (pos_80 - 2), style="dim")
+    tick_label.append("80%", style="yellow")
+    tick_label.append(" " * (pos_95 - pos_80 - 3), style="dim")
+    tick_label.append("95%", style="red")
+    tick_label.append(" " * max(0, bar_width - pos_95 - 3 - 4), style="dim")
+    tick_label.append("100%", style="dim")
 
     table = Table(show_header=False, box=None, padding=(0, 1))
     table.add_column(style="dim")
@@ -1241,11 +1331,13 @@ def _render_balance_from_local_estimate() -> None:
     table.add_row("Ciclo desde", p.cycle_start.isoformat())
     table.add_row(
         "Consumo",
-        f"{_fmt_credits(bal['consumed'])} / {bal['monthly_credits']} créditos",
+        f"[b]{_fmt_credits(bal['consumed'])}[/b] / {bal['monthly_credits']} créditos",
     )
     table.add_row("Restante", _fmt_credits(bal["remaining"]))
     table.add_row("Uso", Text(f"{bal['pct_used']:.1f}%", style=color))
-    table.add_row("Barra", bar)
+    table.add_row("", bar)
+    table.add_row("", tick_line)
+    table.add_row("", tick_label)
     table.add_row("Turns no ciclo", str(bal["turns"]))
     table.add_row("Sessões no ciclo", str(bal["sessions"]))
     table.add_row("Fonte", "estimativa local (cli)")

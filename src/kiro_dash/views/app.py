@@ -122,11 +122,12 @@ class KiroDashApp(App):
                 child.refresh_snapshot()  # type: ignore[attr-defined]
 
     def action_cycle_source(self) -> None:
-        """Cycle source (T5-W7).
+        """Cycle source (T5-W7 → T1-W8 funcional).
 
-        Estado visual em ``self.current_source``. Em v0.7.0 não filtra
-        as tabs (tabs lêem all default); iterações futuras vão fazer
-        filter por aba.
+        Em v0.7.1+ o source filtra de fato as tabs Now/Today/Projects/
+        Models/Tools (cada tab lê ``self.app.current_source`` via
+        ``views.tabs._helpers.collect_for_tab``). Cycle dispara
+        refresh em todas as tabs visíveis após mudança.
         """
         idx = _SOURCE_CYCLE.index(self.current_source)
         self.current_source = _SOURCE_CYCLE[(idx + 1) % len(_SOURCE_CYCLE)]
@@ -136,13 +137,28 @@ class KiroDashApp(App):
             title="Filtro de fonte",
             timeout=3,
         )
+        self._refresh_all_tabs()
+
+    def _refresh_all_tabs(self) -> None:
+        """Dispara ``refresh_snapshot`` em todas as tabs com dados."""
+        for tab_id in ("now", "today", "projects", "models", "tools"):
+            try:
+                pane = self.query_one(f"#{tab_id}", TabPane)
+            except Exception:
+                continue
+            for child in pane.children:
+                if hasattr(child, "refresh_snapshot"):
+                    try:
+                        child.refresh_snapshot()  # type: ignore[attr-defined]
+                    except Exception:
+                        # Não bloquear o cycle por uma tab quebrada
+                        pass
 
     def action_help(self) -> None:
-        self.notify(
-            "Atalhos: 1-7 trocar aba · r refresh · s cycle source · q sair",
-            title="Ajuda",
-            timeout=5,
-        )
+        """Abre modal completo com lista de atalhos (T6-W8)."""
+        from kiro_dash.views.help_modal import HelpModal
+
+        self.push_screen(HelpModal())
 
 
 def run_app() -> int:

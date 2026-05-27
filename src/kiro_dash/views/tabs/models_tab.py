@@ -9,7 +9,7 @@ from textual.widgets import DataTable, Static
 
 from kiro_dash.aggregator import Aggregate, aggregate_by_model, turns_in_last_days
 from kiro_dash.models import Session
-from kiro_dash.parser import load_all_sessions
+from kiro_dash.views.tabs._helpers import collect_for_tab, get_current_source
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,10 +36,12 @@ class ModelsTab(Container):
         self.refresh_snapshot()
 
     def refresh_snapshot(self) -> None:
-        sessions = load_all_sessions()
+        sessions = collect_for_tab(self)
         snap = build_models_snapshot(sessions, days=self.DEFAULT_DAYS)
+        source = get_current_source(self)
+        source_tag = f"  [dim]·[/dim] [b]source={source}[/b]" if source != "all" else ""
         self.query_one("#models-header", Static).update(
-            f"[b]Modelos[/b] — últimos {snap.window_days}d"
+            f"[b]Modelos[/b] — últimos {snap.window_days}d{source_tag}"
         )
         t = self.query_one("#models-table", DataTable)
         t.clear()

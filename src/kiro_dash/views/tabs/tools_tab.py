@@ -7,8 +7,9 @@ from textual.app import ComposeResult
 from textual.containers import Container
 from textual.widgets import DataTable, Static
 
-from kiro_dash.aggregator import aggregate_tools_in_window
+from kiro_dash.aggregator import aggregate_tools_in_window_by_source
 from kiro_dash.parser import DEFAULT_SESSIONS_DIR
+from kiro_dash.views.tabs._helpers import get_current_source
 from kiro_dash.visual import bar_inline, sparkline
 
 
@@ -27,11 +28,15 @@ class ToolsTab(Container):
         self.refresh_snapshot()
 
     def refresh_snapshot(self) -> None:
-        aggs = aggregate_tools_in_window(DEFAULT_SESSIONS_DIR, hours=self.DEFAULT_HOURS)
+        source = get_current_source(self)
+        aggs = aggregate_tools_in_window_by_source(
+            source, sessions_dir=DEFAULT_SESSIONS_DIR, hours=self.DEFAULT_HOURS
+        )
         total = sum(a["count"] for a in aggs)
         err_total = sum(a["errors"] for a in aggs)
+        source_tag = f"  [dim]·[/dim] [b]source={source}[/b]" if source != "all" else ""
         self.query_one("#tools-header", Static).update(
-            f"[b]Tools[/b] — últimas {self.DEFAULT_HOURS}h  "
+            f"[b]Tools[/b] — últimas {self.DEFAULT_HOURS}h{source_tag}  "
             f"[cyan]{total} chamadas[/cyan]  "
             + (f"[red]{err_total} erros[/red]" if err_total else "")
         )

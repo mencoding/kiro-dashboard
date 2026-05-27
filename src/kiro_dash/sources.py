@@ -133,6 +133,9 @@ class Sources:
 
         Cada linha:  ``"  <slug>      <symbol>  <hint>"``
         Símbolo: ``✓`` ativo, ``—`` inativo/futuro.
+
+        Mantido para compatibilidade. Para output mais estruturado,
+        use :meth:`summary_rows` (Wave 8).
         """
         from kiro_dash.freshness import format_age, freshness_for
 
@@ -181,6 +184,88 @@ class Sources:
         lines.append(f"  cli-sqlite     —  (watchlist; conversations_v2 vazia)")
 
         return lines
+
+    def summary_rows(self) -> list[tuple[str, str, str, str]]:
+        """Linhas estruturadas para tabela rich (Wave 8).
+
+        Retorna lista de tuplas ``(slug, status_symbol, status_color, detalhe)``:
+
+        - ``slug``: ``"cli"``, ``"ide-state"``, ``"ide-sessions"``, ``"cli-sqlite"``
+        - ``status_symbol``: ``"✓"`` (ativo) ou ``"—"`` (inativo/futuro)
+        - ``status_color``: cor rich para o symbol (``"green"``, ``"dim"``, level de freshness)
+        - ``detalhe``: descrição com idade/contagem quando relevante
+        """
+        from kiro_dash.freshness import format_age, freshness_for
+
+        rows: list[tuple[str, str, str, str]] = []
+
+        # CLI JSON
+        if self.cli_json is not None:
+            rows.append(("cli", "✓", "green", "CliJsonBackend"))
+        else:
+            rows.append(
+                (
+                    "cli",
+                    "—",
+                    "dim",
+                    "não detectado: ~/.kiro/sessions/cli/",
+                )
+            )
+
+        # IDE State
+        if self.ide_state is not None:
+            age = self.ide_state.data_age()
+            if age is not None:
+                level = freshness_for(age)
+                rows.append(
+                    (
+                        "ide-state",
+                        "✓",
+                        level.value,
+                        f"IdeStateBackend (snapshot {format_age(age)} atrás · {level.value})",
+                    )
+                )
+            else:
+                rows.append(("ide-state", "✓", "green", "IdeStateBackend"))
+        else:
+            rows.append(("ide-state", "—", "dim", "Kiro IDE não detectado"))
+
+        # IDE Sessions
+        if self.ide_sessions is not None:
+            ws_count = 0
+            try:
+                ws_count = len(self.ide_sessions.list_workspaces())  # type: ignore[attr-defined]
+            except (AttributeError, OSError):
+                pass
+            age = self.ide_sessions.data_age()
+            if age is not None:
+                level = freshness_for(age)
+                ws_word = "workspace" if ws_count == 1 else "workspaces"
+                rows.append(
+                    (
+                        "ide-sessions",
+                        "✓",
+                        level.value,
+                        f"IdeSessionBackend ({ws_count} {ws_word} · "
+                        f"{format_age(age)} atrás · {level.value})",
+                    )
+                )
+            else:
+                rows.append(("ide-sessions", "✓", "green", "IdeSessionBackend"))
+        else:
+            rows.append(
+                (
+                    "ide-sessions",
+                    "—",
+                    "dim",
+                    "Kiro IDE sem sessões — abra-o para popular",
+                )
+            )
+
+        # CLI sqlite (watchlist)
+        rows.append(("cli-sqlite", "—", "dim", "watchlist; conversations_v2 vazia"))
+
+        return rows
 
 
 # ── Coletor multi-source (Wave 6 frente R) ──────────────────────────

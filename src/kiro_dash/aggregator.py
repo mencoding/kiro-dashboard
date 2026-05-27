@@ -466,3 +466,27 @@ def aggregate_tools_in_window_combined(
         by_name[name]["errors"] += entry["errors"]
 
     return sorted(by_name.values(), key=lambda d: d["count"], reverse=True)
+
+
+def aggregate_tools_in_window_by_source(
+    source: str = "all",
+    *,
+    sessions_dir: Path,
+    hours: int = 24,
+    sources=None,
+    now: datetime | None = None,
+) -> list[dict]:
+    """Dispatcher por source: cli / ide / all (combined). Wave 8.
+
+    Centraliza a escolha entre :func:`aggregate_tools_in_window` (CLI),
+    :func:`aggregate_tools_in_window_ide` (IDE) e
+    :func:`aggregate_tools_in_window_combined` (ambos).
+    """
+    if source == "cli":
+        return aggregate_tools_in_window(sessions_dir, hours=hours)
+    if source == "ide":
+        return aggregate_tools_in_window_ide(hours=hours, sources=sources, now=now)
+    # default / "all"
+    return aggregate_tools_in_window_combined(
+        sessions_dir, hours=hours, sources=sources, now=now
+    )
