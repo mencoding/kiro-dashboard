@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kiro-dashboard"
-version = "0.6.0"
+version = "0.6.1"
 description = "Painel local de uso e créditos para o Kiro CLI (ex-Q Developer CLI)"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -48,6 +48,9 @@ Issues = "https://github.com/mencoding/kiro-dashboard/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+kiro_dash = ["views/*.tcss", "views/**/*.tcss"]
 
 [tool.ruff]
 line-length = 100
