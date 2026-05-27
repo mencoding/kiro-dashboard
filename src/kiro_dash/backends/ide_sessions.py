@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -31,6 +32,13 @@ SESSIONS_INDEX_FILENAME = "sessions.json"
 # Env vars (decisão #5 do plano Q)
 ENV_OVERRIDE_ROOT = "KIRO_DASH_IDE_SESSIONS_ROOT"
 ENV_DISABLE = "KIRO_DASH_NO_IDE_SESSIONS"
+
+# Regex para reconhecer arquivos de execution (UUID 8-4-4-4-12).
+# I7 do code review: filtrar arquivos não-execution dentro do
+# profile_hash dir para evitar I/O wasteful em arquivos auxiliares.
+_EXECUTION_ID_RE = re.compile(
+    r"^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+)
 
 
 # ── Erros estruturados ──────────────────────────────────────────────
@@ -517,6 +525,12 @@ class IdeSessionBackend(Backend):
             self._root = Path(root)
         else:
             self._root = self._resolve_default_root()
+        # I1 do code review: cache instance-level do índice de
+        # executions. Lazy (preenchido na 1ª chamada) e invalidável
+        # via :meth:`invalidate_cache`. Trade-off: aceitável dentro de
+        # uma única invocação CLI; em TUI live o caller deve chamar
+        # ``invalidate_cache()`` periodicamente para refresh.
+        self._exec_index_cache: dict[str, list["IdeExecution"]] | None = None
 
     # -- resolution --
 
@@ -644,33 +658,52 @@ class IdeSessionBackend(Backend):
 
     # -- T8/T9: API completa (list_sessions, iter_turns, ...) -----------
 
+    def invalidate_cache(self) -> None:
+        """Limpa cache do índice de executions (I1 do code review).
+
+        Chamar antes de re-leituras quando arquivos no disco podem
+        ter mudado (TUI live, watchdog em loop). Em CLI invocação
+        única o cache é sempre fresh por construção.
+        """
+        self._exec_index_cache = None
+
     def _scan_all_executions(self) -> Iterator["IdeExecution"]:
         """Itera todas as executions encontradas em todos os profile_hashes.
 
-        Faz I/O completo (lê cada arquivo). Resultado não é cacheado;
-        callers que iterem repetidamente devem materializar via list().
+        Filtra arquivos por nome (UUID) — I7 do code review: evita
+        tentar parser arquivos auxiliares (catálogo, profile.json,
+        etc.) como JSON de execution.
+
+        Faz I/O completo. Resultado é cacheado em
+        ``_exec_index_cache`` via :meth:`_executions_by_session_id`.
         """
         for ph_dir in self.iter_profile_hash_dirs():
             for entry in sorted(ph_dir.iterdir()):
                 if not entry.is_dir():
                     continue
-                # Subdirs como INNER_HASH contêm os arquivos completos
-                # de execution (nomes = execution_id sem extensão).
                 for f in sorted(entry.iterdir()):
                     if not f.is_file():
                         continue
+                    if not _EXECUTION_ID_RE.match(f.name):
+                        continue  # I7: pular arquivos não-execution
                     ex = read_execution(f)
                     if ex is not None:
                         yield ex
 
     def _executions_by_session_id(self) -> dict[str, list["IdeExecution"]]:
-        """Indexa executions por ``chat_session_id``."""
+        """Indexa executions por ``chat_session_id``.
+
+        Cacheado em instance state (I1 do code review). Use
+        :meth:`invalidate_cache` para forçar re-leitura.
+        """
+        if self._exec_index_cache is not None:
+            return self._exec_index_cache
         index: dict[str, list[IdeExecution]] = {}
         for ex in self._scan_all_executions():
             index.setdefault(ex.chat_session_id, []).append(ex)
-        # Ordenar cada lista por start_time crescente
         for sid in index:
             index[sid].sort(key=lambda e: e.start_time)
+        self._exec_index_cache = index
         return index
 
     def _strip_prefix(self, session_id: str) -> str:

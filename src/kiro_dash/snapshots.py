@@ -24,7 +24,31 @@ from kiro_dash.aggregator import (
 from kiro_dash.config import default_config_path, load_aliases
 from kiro_dash.models import Session
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+"""Schema atual de snapshot.
+
+- v1 (Wave 5): single-source CLI implícita; sem ``internal_session_id``
+  nem ``source`` em ``by_session``. Ainda lido transparentemente em
+  v0.7.0+ via injeção de ``cli:`` retroativa.
+- v2 (Wave 6/R): adiciona ``internal_session_id`` e ``source`` em
+  cada item de ``by_session``. Multi-source ready.
+"""
+
+# Slugs canônicos de identidade composta (espelham backends/ide_mapper)
+_CLI_SLUG = "cli"
+_IDE_SESSIONS_SLUG = "ide-sessions"
+
+
+def _detect_session_source(session_id: str) -> tuple[str, str]:
+    """Retorna ``(source_slug, internal_session_id)`` para uma session_id raw.
+
+    - ``"abc-123"`` → ``("cli", "cli:abc-123")``
+    - ``"ide-sessions:abc-123"`` → ``("ide-sessions", "ide-sessions:abc-123")``
+    """
+    if ":" in session_id:
+        prefix = session_id.split(":", 1)[0]
+        return (prefix, session_id)
+    return (_CLI_SLUG, f"{_CLI_SLUG}:{session_id}")
 
 
 def snapshots_dir_default() -> Path:
@@ -71,6 +95,25 @@ def build_snapshot(
     h, m = divmod(abs(total_minutes), 60)
     tz_str = f"{sign}{h:02d}:{m:02d}"
 
+    # by_session v2: enriquecer Aggregate com internal_session_id e source.
+    # Em v0.7.0+ usamos Aggregate.source_session_id (campo novo) para
+    # evitar parsing reverso de label — I2 do code review Wave 6/R.
+    by_session_aggs = aggregate_by_session(pairs)
+    by_session_v2 = []
+    for a in by_session_aggs:
+        raw_sid = a.source_session_id
+        if raw_sid:
+            source, internal = _detect_session_source(raw_sid)
+        else:
+            source, internal = (_CLI_SLUG, "")
+        by_session_v2.append(
+            {
+                **_agg_dict(a),
+                "internal_session_id": internal,
+                "source": source,
+            }
+        )
+
     return {
         "schema_version": SCHEMA_VERSION,
         "local_date": d.isoformat(),
@@ -85,7 +128,7 @@ def build_snapshot(
         "by_model": [_agg_dict(a) for a in aggregate_by_model(pairs)],
         "by_project": [_agg_dict(a) for a in aggregate_by_project(pairs, aliases=aliases)],
         "by_agent_pair": [_pair_dict(a) for a in aggregate_by_agent_pair(pairs)],
-        "by_session": [_agg_dict(a) for a in aggregate_by_session(pairs)],
+        "by_session": by_session_v2,
         "by_tool": [
             {"name": t["name"], "count": t["count"], "sessions": t["sessions"], "errors": t["errors"]}
             for t in tools
@@ -139,7 +182,13 @@ def write_snapshot(
 
 
 def read_snapshot(d: date, *, paths: SnapshotPaths | None = None) -> dict | None:
-    """Lê e merge todos os snapshots do dia ``d`` (todos os hosts)."""
+    """Lê e merge todos os snapshots do dia ``d`` (todos os hosts).
+
+    Migração transparente v1 → v2: snapshots sem ``schema_version`` ou
+    com ``schema_version: 1`` recebem ``internal_session_id: "cli:<sid>"``
+    e ``source: "cli"`` injetados em memória. ``schema_version > 2``
+    levanta ``SnapshotSchemaError`` (downgrade necessário).
+    """
     p = paths or SnapshotPaths(root=snapshots_dir_default())
     files = p.glob_for_date(d)
     if not files:
@@ -148,14 +197,49 @@ def read_snapshot(d: date, *, paths: SnapshotPaths | None = None) -> dict | None
     for fp in files:
         try:
             with open(fp) as f:
-                snaps.append(json.load(f))
+                raw = json.load(f)
         except (OSError, json.JSONDecodeError):
             continue
+        snaps.append(_migrate_snapshot_in_memory(raw))
     if not snaps:
         return None
     if len(snaps) == 1:
         return snaps[0]
     return _merge_snapshots(snaps)
+
+
+class SnapshotSchemaError(Exception):
+    """Schema de snapshot é mais novo do que esta versão do kiro-dash sabe ler."""
+
+
+def _migrate_snapshot_in_memory(snap: dict) -> dict:
+    """Migra snapshot v1 → v2 em memória (sem reescrever em disco).
+
+    A escrita em v2 só acontece quando um novo snapshot é gerado (lazy
+    + self-healing). Snapshots v1 antigos permanecem intactos no disco;
+    apenas o reader os apresenta como v2 para o resto do código.
+    """
+    version = snap.get("schema_version", 1)
+    if version > SCHEMA_VERSION:
+        raise SnapshotSchemaError(
+            f"snapshot tem schema_version={version}, kiro-dash suporta até {SCHEMA_VERSION}. "
+            "Atualize o kiro-dash (pipx install --force kiro-dash)."
+        )
+    if version == SCHEMA_VERSION:
+        return snap
+    # v1 → v2: injetar internal_session_id + source ("cli") em by_session
+    migrated = dict(snap)
+    migrated["schema_version"] = SCHEMA_VERSION
+    by_session = list(snap.get("by_session", []))
+    for entry in by_session:
+        if "internal_session_id" not in entry:
+            label = entry.get("label", "")
+            short = label.split(" ", 1)[0]
+            entry["internal_session_id"] = f"{_CLI_SLUG}:{short}"
+        if "source" not in entry:
+            entry["source"] = _CLI_SLUG
+    migrated["by_session"] = by_session
+    return migrated
 
 
 def _merge_snapshots(snaps: list[dict]) -> dict:

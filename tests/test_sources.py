@@ -37,7 +37,7 @@ def test_sources_detect_with_both(tmp_path):
 
 def test_sources_detect_cli_only(tmp_path):
     cli = _make_cli_backend(tmp_path, exists=True)
-    s = Sources.detect(cli_json=cli, ide_state=None)
+    s = Sources.detect(cli_json=cli, ide_state=None, ide_sessions=None)
     assert s.cli_json is cli
     assert s.ide_state is None
     assert s.has_any() is True

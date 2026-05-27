@@ -87,7 +87,7 @@ from kiro_dash.watchdog import (
 )
 from kiro_dash.jsonl_parser import iter_tool_calls
 from kiro_dash.snapshots import ensure_snapshots_up_to, write_snapshot
-from kiro_dash.sources import Sources
+from kiro_dash.sources import Sources, collect_sessions
 
 console = Console()
 
@@ -96,25 +96,6 @@ console = Console()
 
 
 SOURCE_CHOICES = ["cli", "ide", "all"]
-
-
-def _collect_sessions_by_source(
-    source: str, sources: Sources | None = None
-) -> list[Session]:
-    """Coleta sessões da fonte pedida (``cli`` / ``ide`` / ``all``).
-
-    ``cli`` usa ``load_all_sessions`` (CliJsonBackend), ``ide`` usa
-    ``IdeSessionBackend.list_sessions``. ``all`` concatena (sem dedup —
-    isso é trabalho da frente R).
-    """
-    out: list[Session] = []
-    if source in ("cli", "all"):
-        out.extend(load_all_sessions())
-    if source in ("ide", "all"):
-        srcs = sources if sources is not None else Sources.detect()
-        if srcs.ide_sessions is not None:
-            out.extend(srcs.ide_sessions.list_sessions())
-    return out
 
 
 def _find_session_by_prefix_in_ide(
@@ -138,6 +119,15 @@ def _find_session_by_prefix_in_ide(
     if len(matches) == 1:
         return matches[0]
     return None
+
+
+# Backward-compat: alguns tests do CLI ainda chamam _collect_sessions_by_source.
+# Em v0.7.0+ isto delega para sources.collect_sessions.
+def _collect_sessions_by_source(
+    source: str, sources: Sources | None = None
+) -> list[Session]:
+    """[Deprecated em v0.7.0] use ``kiro_dash.sources.collect_sessions``."""
+    return collect_sessions(source, sources=sources)
 
 
 # ─── helpers de formatação ────────────────────────────────────────────────
@@ -354,7 +344,7 @@ def today(day_str: str | None, agent: str | None) -> None:
         return
 
     # D ou D-1: path stateless (live)
-    sessions = load_all_sessions()
+    sessions = collect_sessions("all")
     pairs = filter_by_agent(turns_in_local_day(sessions, d), agent)
 
     if not pairs:
@@ -732,7 +722,7 @@ def now(refresh: float) -> None:
 def projects(window: str, days: int | None, limit: int, agent: str | None) -> None:
     """Top projetos (heurística) por créditos numa janela nomeada ou em N dias."""
     _ensure_snapshots_silently()
-    sessions = load_all_sessions()
+    sessions = collect_sessions("all")
     plan_cfg = load_plan(default_config_path())
     try:
         if days is not None:
@@ -776,7 +766,7 @@ def projects(window: str, days: int | None, limit: int, agent: str | None) -> No
 def models(window: str, days: int | None, limit: int, agent: str | None) -> None:
     """Top modelos por créditos numa janela nomeada ou em N dias."""
     _ensure_snapshots_silently()
-    sessions = load_all_sessions()
+    sessions = collect_sessions("all")
     plan_cfg = load_plan(default_config_path())
     try:
         if days is not None:
@@ -813,9 +803,9 @@ def models(window: str, days: int | None, limit: int, agent: str | None) -> None
 @click.option("--agent", default=None, help="Filtra por agent_name.")
 @click.option(
     "--source",
-    default="cli",
+    default="all",
     type=click.Choice(SOURCE_CHOICES),
-    help="Fonte de sessões: cli (default, retro-compat), ide, ou all (concat).",
+    help="Fonte de sessões: all (default — CLI+IDE), cli, ou ide.",
 )
 @click.option(
     "--show-source",
@@ -1292,9 +1282,9 @@ def audit() -> None:
 @audit.command("running")
 @click.option(
     "--source",
-    default="cli",
+    default="all",
     type=click.Choice(SOURCE_CHOICES),
-    help="Fonte de sessões: cli (default), ide ou all.",
+    help="Fonte de sessões: all (default — CLI+IDE), cli, ou ide.",
 )
 def audit_running(source: str) -> None:
     """Lista sessões com turn em curso AGORA."""
@@ -1684,7 +1674,7 @@ def _ensure_snapshots_silently() -> None:
         return
     _already_ensured = True
     try:
-        sessions = load_all_sessions()
+        sessions = collect_sessions("all")
         yesterday = datetime.now().astimezone().date() - timedelta(days=1)
         ensure_snapshots_up_to(yesterday, sessions, lookback_days=30)
     except Exception:
@@ -1701,7 +1691,7 @@ def snapshot(date_str: str | None, force: bool) -> None:
     Sem argumento: roda lazy/self-healing (últimos 30 dias até ontem).
     Com YYYY-MM-DD: gera/garante esse dia. --force sobrescreve.
     """
-    sessions = load_all_sessions()
+    sessions = collect_sessions("all")
     today_d = datetime.now().astimezone().date()
 
     if date_str is None:

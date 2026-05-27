@@ -30,30 +30,11 @@ from kiro_dash.parser import (
     load_all_sessions,
     load_session_file,
 )
-from kiro_dash.sources import Sources
+from kiro_dash.sources import Sources, collect_sessions
 
 # Wave 6 frente Q: tools podem aceitar parâmetro `source` para
 # enxergar sessões IDE. Default ``cli`` preserva retro-compat.
 VALID_SOURCES = ("cli", "ide", "all", "auto")
-
-
-def _collect_sessions_for_mcp(source: str = "cli") -> list:
-    """Coleta sessões para tools MCP.
-
-    Espelha :func:`kiro_dash.cli._collect_sessions_by_source` mas sem
-    importar do CLI (evita ciclo). ``source`` ∈ {cli, ide, all}.
-    """
-    out: list = []
-    if source not in ("cli", "ide", "all"):
-        # default seguro: cli
-        source = "cli"
-    if source in ("cli", "all"):
-        out.extend(load_all_sessions())
-    if source in ("ide", "all"):
-        srcs = Sources.detect()
-        if srcs.ide_sessions is not None:
-            out.extend(srcs.ide_sessions.list_sessions())
-    return out
 
 
 def _agg_to_dict(a: Aggregate) -> dict:
@@ -68,7 +49,12 @@ def _agg_to_dict(a: Aggregate) -> dict:
 
 
 def tool_today_summary(*, now: datetime | None = None) -> dict:
-    sessions = load_all_sessions()
+    """Agregado do dia local (CLI + IDE quando ambos disponíveis).
+
+    Default ``--source`` em v0.7.0 = ``all``. Para reproduzir
+    comportamento da v0.6.x (só CLI), filtre o caller.
+    """
+    sessions = collect_sessions("all")
     pairs = turns_in_local_day(sessions, now=now)
     n = now if now is not None else datetime.now(timezone.utc)
     return {
@@ -86,49 +72,33 @@ def tool_today_summary(*, now: datetime | None = None) -> dict:
 def tool_active_sessions(source: str = "cli") -> list[dict]:
     """Sessões ativas. ``source`` ∈ {cli (default), ide, all}.
 
-    Para IDE: usa ``IdeSessionBackend.running_sessions()`` (heurística
-    via ``execution.status=running`` no catálogo, decisão #10 da Q).
+    Para CLI: ``is_active=True`` (lockfile presente).
+    Para IDE: heurística via ``execution.status=running`` no catálogo
+    (decisão #10 do plano frente Q).
+
+    Em v0.7.0 default permanece ``"cli"`` para retro-compat MCP;
+    alguma surface CLI já migrou para ``"all"``.
     """
+    sessions = collect_sessions(source)
     out: list[dict] = []
-    if source in ("cli", "all"):
-        sessions = load_all_sessions()
-        for s in active_sessions(sessions):
-            last = s.last_turn_at or s.updated_at
-            out.append(
-                {
-                    "session_id": s.session_id,
-                    "source": "cli",
-                    "title": s.title,
-                    "agent_name": s.agent_name,
-                    "model_id": s.model_id,
-                    "rate_multiplier": s.rate_multiplier,
-                    "cwd": s.cwd,
-                    "turns_count": len(s.turns),
-                    "total_credits": round(s.total_credits, 6),
-                    "context_usage_pct": s.last_context_usage_pct,
-                    "last_turn_at": last.isoformat() if last else None,
-                }
-            )
-    if source in ("ide", "all"):
-        srcs = Sources.detect()
-        if srcs.ide_sessions is not None:
-            for s in srcs.ide_sessions.running_sessions():
-                last = s.updated_at
-                out.append(
-                    {
-                        "session_id": s.session_id,
-                        "source": "ide",
-                        "title": s.title,
-                        "agent_name": s.agent_name,
-                        "model_id": s.model_id,
-                        "rate_multiplier": s.rate_multiplier,
-                        "cwd": s.cwd,
-                        "turns_count": len(s.turns),
-                        "total_credits": round(s.total_credits, 6),
-                        "context_usage_pct": s.last_context_usage_pct,
-                        "last_turn_at": last.isoformat() if last else None,
-                    }
-                )
+    for s in active_sessions(sessions):
+        last = s.last_turn_at or s.updated_at
+        is_ide = ":" in s.session_id
+        out.append(
+            {
+                "session_id": s.session_id,
+                "source": "ide" if is_ide else "cli",
+                "title": s.title,
+                "agent_name": s.agent_name,
+                "model_id": s.model_id,
+                "rate_multiplier": s.rate_multiplier,
+                "cwd": s.cwd,
+                "turns_count": len(s.turns),
+                "total_credits": round(s.total_credits, 6),
+                "context_usage_pct": s.last_context_usage_pct,
+                "last_turn_at": last.isoformat() if last else None,
+            }
+        )
     return out
 
 
@@ -149,7 +119,14 @@ def _find_ide_session_by_prefix(prefix: str):
 
 
 def _session_to_dict(s, source: str) -> dict:
-    """Serializa Session (CLI ou IDE) para payload MCP."""
+    """Serializa Session (CLI ou IDE) para payload MCP.
+
+    Para sessões IDE: ``context_window_tokens`` é serializado como
+    ``null`` porque o backend IDE não expõe esse valor (decisão I6 do
+    code review Wave 6/R; placeholder ``200_000`` interno é apenas
+    para satisfazer o tipo, não reflete o servidor).
+    """
+    is_ide = source == "ide"
     return {
         "session_id": s.session_id,
         "source": source,
@@ -157,7 +134,7 @@ def _session_to_dict(s, source: str) -> dict:
         "agent_name": s.agent_name,
         "model_id": s.model_id,
         "rate_multiplier": s.rate_multiplier,
-        "context_window_tokens": s.context_window_tokens,
+        "context_window_tokens": None if is_ide else s.context_window_tokens,
         "cwd": s.cwd,
         "created_at": s.created_at.isoformat(),
         "updated_at": s.updated_at.isoformat(),
@@ -229,13 +206,15 @@ def tool_session_details(session_id_prefix: str, source: str = "auto") -> dict |
 
 
 def tool_top_projects(days: int = 7, limit: int = 10, *, now: datetime | None = None) -> list[dict]:
-    sessions = load_all_sessions()
+    """Top projetos (cwd) por créditos. Inclui CLI + IDE em v0.7.0+."""
+    sessions = collect_sessions("all")
     pairs = turns_in_last_days(sessions, days=days, now=now)
     return [_agg_to_dict(a) for a in aggregate_by_cwd(pairs)[:limit]]
 
 
 def tool_top_models(days: int = 7, limit: int = 10, *, now: datetime | None = None) -> list[dict]:
-    sessions = load_all_sessions()
+    """Top modelos por créditos. Inclui CLI + IDE em v0.7.0+."""
+    sessions = collect_sessions("all")
     pairs = turns_in_last_days(sessions, days=days, now=now)
     return [_agg_to_dict(a) for a in aggregate_by_model(pairs)[:limit]]
 
@@ -361,7 +340,11 @@ async def _serve() -> None:
             description=(
                 "Drill-down estrutural de uma sessão por prefixo de "
                 "session_id. Aceita 'source' ∈ {auto (default — tenta "
-                "ambas), cli, ide}."
+                "ambas), cli, ide}. Em modo 'auto', se o prefixo casa "
+                "em CLI E em IDE, retorna {'ambiguous': True, 'matches': "
+                "[{...cli...}, {...ide...}]} para o caller escolher. "
+                "Caso contrário, retorna o objeto da sessão (com campo "
+                "'source')."
             ),
             inputSchema={
                 "type": "object",

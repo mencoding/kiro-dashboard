@@ -45,7 +45,7 @@ FAKE_NOW = datetime(2026, 5, 16, 15, 0, tzinfo=timezone.utc)
 
 
 def test_today_summary_aggregates_local_day():
-    with patch("kiro_dash.mcp_server.load_all_sessions", return_value=_fake_sessions()):
+    with patch("kiro_dash.parser.load_all_sessions", return_value=_fake_sessions()):
         out = tool_today_summary(now=FAKE_NOW)
     assert out["total_credits"] == 6.5
     assert out["total_turns"] == 3
@@ -54,7 +54,7 @@ def test_today_summary_aggregates_local_day():
 
 
 def test_active_sessions_returns_only_locked():
-    with patch("kiro_dash.mcp_server.load_all_sessions", return_value=_fake_sessions()):
+    with patch("kiro_dash.parser.load_all_sessions", return_value=_fake_sessions()):
         out = tool_active_sessions()
     assert isinstance(out, list)
     assert len(out) == 1
@@ -82,7 +82,7 @@ def test_session_details_unknown_prefix():
 
 
 def test_top_projects():
-    with patch("kiro_dash.mcp_server.load_all_sessions", return_value=_fake_sessions()):
+    with patch("kiro_dash.parser.load_all_sessions", return_value=_fake_sessions()):
         out = tool_top_projects(days=7, limit=10, now=FAKE_NOW)
     assert isinstance(out, list)
     cwds = {a["label"] for a in out}
@@ -91,7 +91,7 @@ def test_top_projects():
 
 
 def test_top_models():
-    with patch("kiro_dash.mcp_server.load_all_sessions", return_value=_fake_sessions()):
+    with patch("kiro_dash.parser.load_all_sessions", return_value=_fake_sessions()):
         out = tool_top_models(days=7, limit=10, now=FAKE_NOW)
     labels = {a["label"] for a in out}
     assert "claude-opus-4.7" in labels

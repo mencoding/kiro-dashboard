@@ -1,6 +1,6 @@
 # kiro-dashboard
 
-[![Version](https://img.shields.io/badge/version-0.6.1-blue)](https://github.com/mencoding/kiro-dashboard/releases)
+[![Version](https://img.shields.io/badge/version-0.7.0-blue)](https://github.com/mencoding/kiro-dashboard/releases)
 [![Python](https://img.shields.io/badge/python-3.12+-blue)](https://www.python.org)
 [![License](https://img.shields.io/badge/license-Proprietary-red)](#licença)
 
@@ -31,6 +31,7 @@ Inspirado no [`claude-dashboard`](https://github.com/mencoding/claude-dashboard)
 - [TUI interativa](#tui-interativa)
 - [Heurística de projetos](#heurística-de-projetos)
 - [Servidor MCP](#servidor-mcp)
+- [Suporte multi-source](#suporte-multi-source-wave-6--v070)
 - [Stack e arquitetura](#stack-e-arquitetura)
 - [Licença](#licença)
 
@@ -474,6 +475,42 @@ Reinicie a sessão Kiro CLI depois.
 
 Mesma superfície de privacidade da CLI — nenhuma tool MCP expõe conteúdo
 de mensagens.
+
+---
+
+## Suporte multi-source (Wave 6 / v0.7.0)
+
+A v0.7.0 introduz suporte completo para múltiplas fontes de dados Kiro:
+**Kiro CLI** (sessões gravadas em `~/.kiro/sessions/cli/`) **e Kiro IDE**
+(sessões em `~/.config/Kiro/User/globalStorage/kiro.kiroagent/`).
+
+**Matriz de comportamento:**
+
+| CLI | IDE | Modo | Recursos disponíveis |
+|---|---|---|---|
+| ✓ | ✓ | **Completo** | CLI + IDE somados; billing autoritativo via IDE; dedup interno; audit running confiável |
+| ✓ | ✗ | **CLI-only** | Estimativa local de saldo; banner sugerindo IDE; audit running via lockfile |
+| ✗ | ✓ | **IDE-only** | Billing autoritativo via IDE; sem audit running CLI; sem transcripts CLI |
+| ✗ | ✗ | **Onboarding** | Hint para instalar Kiro CLI ou IDE |
+
+**Default mudou:** comandos com flag `--source` (`recent`, `audit running`,
+`session`) agora têm `--source all` como padrão. Usuários com **apenas
+CLI** instalado não notam diferença (única fonte é CLI). Usuários com
+ambos veem dados unificados sem flag explícita.
+
+Para preservar comportamento da v0.6.x, passe `--source cli` explicitamente.
+
+**Identidade composta** distingue sessões: `cli:<uuid>` para CLI raw,
+`ide-sessions:<uuid>` para IDE. Snapshots v2 persistem essa distinção
+por sessão. Snapshots v1 (pré-v0.7.0) são lidos transparentemente como
+v2 em memória.
+
+**Privacidade preservada em ambas as fontes.** Backend IDE é tão cego
+quanto o CLI: nunca lê `actions[].input.content`,
+`actions[].say.message`, `history[].message` ou `editorState`.
+
+**Detalhes de arquitetura:**
+[`docs/adr/0001-multi-backend-architecture.md`](docs/adr/0001-multi-backend-architecture.md).
 
 ---
 

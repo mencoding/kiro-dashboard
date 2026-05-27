@@ -48,7 +48,7 @@ def test_build_snapshot_aggregates_corretamente(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
     sessions = _make_sample(date(2026, 5, 16))
     snap = build_snapshot(sessions, d=date(2026, 5, 16), host="test-host", now=FAKE_NOW)
-    assert snap["schema_version"] == 1
+    assert snap["schema_version"] == 2
     assert snap["local_date"] == "2026-05-16"
     assert snap["captured_by_host"] == "test-host"
     assert snap["totals"]["credits"] == 5.0

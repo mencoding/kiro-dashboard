@@ -29,15 +29,15 @@ def _ide_only_sources(tmp_path):
 
 def test_active_sessions_default_cli():
     """Sem source param, default é cli."""
-    with patch("kiro_dash.mcp_server.load_all_sessions", return_value=[]):
+    with patch("kiro_dash.parser.load_all_sessions", return_value=[]):
         result = tool_active_sessions()
     assert result == []
 
 
 def test_active_sessions_ide_with_running(tmp_path):
     sources = _ide_only_sources(tmp_path)
-    with patch("kiro_dash.mcp_server.load_all_sessions", return_value=[]), patch(
-        "kiro_dash.mcp_server.Sources.detect", return_value=sources
+    with patch("kiro_dash.parser.load_all_sessions", return_value=[]), patch(
+        "kiro_dash.sources.Sources.detect", return_value=sources
     ):
         result = tool_active_sessions(source="ide")
     assert len(result) == 1
@@ -47,8 +47,8 @@ def test_active_sessions_ide_with_running(tmp_path):
 
 def test_active_sessions_all_concatenates(tmp_path):
     sources = _ide_only_sources(tmp_path)
-    with patch("kiro_dash.mcp_server.load_all_sessions", return_value=[]), patch(
-        "kiro_dash.mcp_server.Sources.detect", return_value=sources
+    with patch("kiro_dash.parser.load_all_sessions", return_value=[]), patch(
+        "kiro_dash.sources.Sources.detect", return_value=sources
     ):
         result = tool_active_sessions(source="all")
     # 0 CLI + 1 IDE
@@ -123,22 +123,23 @@ def test_session_details_ide_session_has_total_credits(tmp_path):
     assert result["agent_name"] == "kiro-ide"
 
 
-# ── _collect_sessions_for_mcp helper ─────────────────────────────────
+# ── collect_sessions (sources.py) é a fonte canônica em v0.7.0+ ─────
+# (R1: _collect_sessions_for_mcp helper removido; mcp_server agora usa
+# diretamente kiro_dash.sources.collect_sessions)
 
 
-def test_collect_sessions_for_mcp_invalid_source_falls_back_to_cli():
-    """Source inválido cai para 'cli' silenciosamente."""
-    from kiro_dash.mcp_server import _collect_sessions_for_mcp
+def test_collect_sessions_central_invalid_source_falls_back_to_cli():
+    """Source inválido cai para 'cli' silenciosamente (sources.collect_sessions)."""
+    from kiro_dash.sources import collect_sessions
 
-    with patch("kiro_dash.mcp_server.load_all_sessions", return_value=[]):
-        result = _collect_sessions_for_mcp("bogus")
+    with patch("kiro_dash.parser.load_all_sessions", return_value=[]):
+        result = collect_sessions("bogus")  # type: ignore[arg-type]
     assert result == []
 
 
-def test_collect_sessions_for_mcp_ide_only(tmp_path):
-    from kiro_dash.mcp_server import _collect_sessions_for_mcp
+def test_collect_sessions_central_ide_only(tmp_path):
+    from kiro_dash.sources import collect_sessions
 
     sources = _ide_only_sources(tmp_path)
-    with patch("kiro_dash.mcp_server.Sources.detect", return_value=sources):
-        result = _collect_sessions_for_mcp("ide")
+    result = collect_sessions("ide", sources=sources)
     assert len(result) == 1

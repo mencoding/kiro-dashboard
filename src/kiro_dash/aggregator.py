@@ -15,7 +15,14 @@ from kiro_dash.models import Session, Turn
 
 @dataclass(frozen=True, slots=True)
 class Aggregate:
-    """Sumário de créditos / turns / duração para um conjunto."""
+    """Sumário de créditos / turns / duração para um conjunto.
+
+    Em ``aggregate_by_session`` (v0.7.0+), ``source_session_id``
+    preserva o ``session_id`` raw que originou o agregado, permitindo
+    que callers acessem a identidade sem parsear ``label``. Em
+    agregações que cobrem múltiplas sessões (by_cwd, by_model, etc.),
+    é ``None`` por design.
+    """
 
     label: str
     credits: float
@@ -23,6 +30,7 @@ class Aggregate:
     sessions: int
     duration: timedelta
     tool_uses: int
+    source_session_id: str | None = None
 
 
 def _local_day_bounds(d: date) -> tuple[datetime, datetime]:
@@ -92,8 +100,15 @@ def _aggregate_pairs(
     *,
     key,
     label_fn=str,
+    carry_key_as_source: bool = False,
 ) -> list[Aggregate]:
-    """Agrupa pares ``(sessão, turn)`` por ``key(s, t)`` e calcula totais."""
+    """Agrupa pares ``(sessão, turn)`` por ``key(s, t)`` e calcula totais.
+
+    Quando ``carry_key_as_source=True``, o valor de ``key`` (tipicamente
+    ``session_id`` raw) é preservado em ``Aggregate.source_session_id``.
+    Útil em :func:`aggregate_by_session` para callers não precisarem
+    fazer parsing reverso do ``label`` (I2 do code review Wave 6/R).
+    """
     buckets: dict[object, dict] = defaultdict(
         lambda: {"credits": 0.0, "turns": 0, "sessions": set(), "duration": timedelta(), "tools": 0}
     )
@@ -114,6 +129,7 @@ def _aggregate_pairs(
             sessions=len(v["sessions"]),
             duration=v["duration"],
             tool_uses=v["tools"],
+            source_session_id=str(k) if carry_key_as_source else None,
         )
         for k, v in buckets.items()
     ]
@@ -213,7 +229,12 @@ def aggregate_by_project(pairs: list[tuple[Session, Turn]], *, aliases: dict[str
 
 
 def aggregate_by_session(pairs: list[tuple[Session, Turn]]) -> list[Aggregate]:
-    """Agrega por ``session_id`` (label = sid curto + título)."""
+    """Agrega por ``session_id`` (label = sid curto + título).
+
+    Em v0.7.0+ preenche ``Aggregate.source_session_id`` com o UUID raw,
+    permitindo que callers (snapshots v2, MCP) acessem a identidade
+    sem parsear o label.
+    """
     def label(sid: str) -> str:
         # Recupera título do session em pairs
         for s, _ in pairs:
@@ -225,7 +246,12 @@ def aggregate_by_session(pairs: list[tuple[Session, Turn]]) -> list[Aggregate]:
                 return short
         return sid[:8]
 
-    return _aggregate_pairs(pairs, key=lambda s, t: s.session_id, label_fn=label)
+    return _aggregate_pairs(
+        pairs,
+        key=lambda s, t: s.session_id,
+        label_fn=label,
+        carry_key_as_source=True,
+    )
 
 
 def total_credits(pairs: list[tuple[Session, Turn]]) -> float:

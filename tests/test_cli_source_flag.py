@@ -36,7 +36,7 @@ def _ide_only_sources(tmp_path):
 
 def test_collect_sessions_cli_source(tmp_path):
     """source=cli usa load_all_sessions."""
-    with patch("kiro_dash.cli.load_all_sessions", return_value=[]):
+    with patch("kiro_dash.parser.load_all_sessions", return_value=[]):
         result = _collect_sessions_by_source("cli")
     assert result == []
 
@@ -52,7 +52,7 @@ def test_collect_sessions_ide_source(tmp_path):
 def test_collect_sessions_all_concatenates(tmp_path):
     """source=all concatena CLI + IDE."""
     sources = _ide_only_sources(tmp_path)
-    with patch("kiro_dash.cli.load_all_sessions", return_value=[]):
+    with patch("kiro_dash.parser.load_all_sessions", return_value=[]):
         result = _collect_sessions_by_source("all", sources=sources)
     # 0 CLI + 1 IDE
     assert len(result) == 1
@@ -83,8 +83,8 @@ def test_find_session_by_prefix_in_ide_no_backend(tmp_path):
 def test_recent_cli_default_works():
     """recent --source cli mantém comportamento original."""
     runner = CliRunner()
-    with patch("kiro_dash.cli.load_all_sessions", return_value=[]):
-        result = runner.invoke(main, ["recent"])
+    with patch("kiro_dash.parser.load_all_sessions", return_value=[]):
+        result = runner.invoke(main, ["recent", "--source", "cli"])
     assert result.exit_code == 0
     assert "Nenhuma sessão" in result.output
 

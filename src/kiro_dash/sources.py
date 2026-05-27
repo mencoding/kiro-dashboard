@@ -15,7 +15,7 @@ Cenários de instalação cobertos (ADR-0001 §"Política de fallback"):
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from kiro_dash.backends import Backend, Capability
 from kiro_dash.backends.cli_json import CliJsonBackend
@@ -28,15 +28,14 @@ class Sources:
     """Conjunto de backends instanciados, com ``is_available()`` consultado.
 
     Construído via :meth:`detect`. Os campos podem ser ``None`` quando o
-    backend correspondente não foi instanciado (ex.: cli_sqlite/ide_sessions
-    ainda não implementados nas frentes Q/R).
+    backend correspondente não foi instanciado/detectado. ``cli_sqlite``
+    permanece placeholder até implementação futura (Wave 7+).
     """
 
     cli_json: Backend | None
     ide_state: Backend | None
-    # Placeholders para frentes Q/R; sempre None até implementação:
-    cli_sqlite: Backend | None = None
     ide_sessions: Backend | None = None
+    cli_sqlite: Backend | None = None  # placeholder Wave 7+
 
     @classmethod
     def detect(
@@ -98,17 +97,13 @@ class Sources:
 
         - ``USAGE_STATE``: ``ide_state`` (autoritativo) preferido
         - ``SESSIONS``/``TURNS``/``TOOL_CALLS``: união CLI + IDE (CLI primeiro)
-        - ``RUNNING``: união (mas só CLI tem confiabilidade hoje)
+        - ``RUNNING``: união (CLI tem confiabilidade via lockfile;
+          IDE via execution.status=running no catálogo, decisão #10/Q)
         """
         if capability is Capability.USAGE_STATE:
-            ordered: list[Backend] = []
-            if self.ide_state is not None:
-                ordered.append(self.ide_state)
-            return [b for b in ordered if capability in b.capabilities()]
+            return [self.ide_state] if self.ide_state is not None else []
 
-        # Para SESSIONS/TURNS/TOOL_CALLS/RUNNING/ACCOUNT, união com CLI
-        # primeiro. As frentes Q/R adicionam IDE_SESSIONS aqui.
-        ordered = []
+        ordered: list[Backend] = []
         for b in (self.cli_json, self.ide_sessions, self.cli_sqlite, self.ide_state):
             if b is not None and capability in b.capabilities():
                 ordered.append(b)
@@ -119,11 +114,19 @@ class Sources:
         return bool(self.all_backends())
 
     def has_only_cli(self) -> bool:
-        """``True`` se CLI está disponível mas IDE não.
+        """``True`` se CLI está disponível mas nenhum backend IDE.
 
-        Usado para decidir exibir banner de onboarding sugerindo IDE.
+        Considera ambos ``ide_state`` E ``ide_sessions`` ausentes —
+        usuário com IDE instalado mas state.vscdb stale (sem
+        usageState) ainda tem ``ide_sessions`` se abriu o IDE alguma
+        vez. Banner de onboarding só aparece quando IDE realmente
+        não foi detectado em nenhuma das duas fontes.
         """
-        return self.cli_json is not None and self.ide_state is None
+        return (
+            self.cli_json is not None
+            and self.ide_state is None
+            and self.ide_sessions is None
+        )
 
     def summary_lines(self) -> list[str]:
         """Linhas resumo para uso em ``whoami`` e debug.
@@ -178,3 +181,63 @@ class Sources:
         lines.append(f"  cli-sqlite     —  (watchlist; conversations_v2 vazia)")
 
         return lines
+
+
+# ── Coletor multi-source (Wave 6 frente R) ──────────────────────────
+
+
+VALID_SOURCES = ("cli", "ide", "all")
+
+
+def _dedupe_by_session_id(sessions: list) -> list:
+    """Remove duplicatas mantendo a primeira ocorrência por ``session_id``.
+
+    Como sessões CLI e IDE têm slugs distintos (``cli`` raw uuid vs
+    ``ide-sessions:<uuid>``), colisão real entre fontes é impossível.
+    Esta função é defensiva contra dupla leitura (mesma fonte
+    enumerada duas vezes por engano) e contra futuras fontes que
+    possam compartilhar UUIDs.
+    """
+    seen: set[str] = set()
+    out: list = []
+    for s in sessions:
+        if s.session_id in seen:
+            continue
+        seen.add(s.session_id)
+        out.append(s)
+    return out
+
+
+def collect_sessions(
+    source: str = "all",
+    *,
+    sources: "Sources | None" = None,
+    dedupe: bool = True,
+) -> list:
+    """Coleta sessões da(s) fonte(s) pedida(s).
+
+    :param source: ``cli`` (só CLI), ``ide`` (só IDE), ou ``all``
+        (concatena CLI + IDE).
+    :param sources: instância de :class:`Sources` para usar; se
+        ``None``, chama :meth:`Sources.detect` (detecção live).
+    :param dedupe: quando ``True`` (default), remove duplicatas por
+        ``session_id`` em modo ``all``. Sem efeito em ``cli``/``ide``
+        puros (não há overlap real).
+
+    Source inválido cai silenciosamente para ``cli`` (retro-compat).
+    Importações lazy para evitar ciclos.
+    """
+    if source not in VALID_SOURCES:
+        source = "cli"
+    out: list = []
+    if source in ("cli", "all"):
+        from kiro_dash.parser import load_all_sessions
+
+        out.extend(load_all_sessions())
+    if source in ("ide", "all"):
+        srcs = sources if sources is not None else Sources.detect()
+        if srcs.ide_sessions is not None:
+            out.extend(srcs.ide_sessions.list_sessions())
+    if dedupe and source == "all":
+        out = _dedupe_by_session_id(out)
+    return out

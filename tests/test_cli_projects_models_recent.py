@@ -40,7 +40,7 @@ def _fake_sessions():
 
 
 def test_projects_default_window_aggregates_by_cwd():
-    with patch("kiro_dash.cli.load_all_sessions", return_value=_fake_sessions()):
+    with patch("kiro_dash.parser.load_all_sessions", return_value=_fake_sessions()):
         runner = CliRunner()
         result = runner.invoke(main, ["projects"])
     assert result.exit_code == 0
@@ -52,7 +52,7 @@ def test_projects_default_window_aggregates_by_cwd():
 
 
 def test_projects_window_30d_includes_old_session():
-    with patch("kiro_dash.cli.load_all_sessions", return_value=_fake_sessions()):
+    with patch("kiro_dash.parser.load_all_sessions", return_value=_fake_sessions()):
         runner = CliRunner()
         result = runner.invoke(main, ["projects", "--days", "30"])
     assert result.exit_code == 0
@@ -62,7 +62,7 @@ def test_projects_window_30d_includes_old_session():
 
 
 def test_models_default_window_aggregates_by_model_id():
-    with patch("kiro_dash.cli.load_all_sessions", return_value=_fake_sessions()):
+    with patch("kiro_dash.parser.load_all_sessions", return_value=_fake_sessions()):
         runner = CliRunner()
         result = runner.invoke(main, ["models"])
     assert result.exit_code == 0
@@ -71,9 +71,9 @@ def test_models_default_window_aggregates_by_model_id():
 
 
 def test_recent_orders_by_updated_at_desc():
-    with patch("kiro_dash.cli.load_all_sessions", return_value=_fake_sessions()):
+    with patch("kiro_dash.parser.load_all_sessions", return_value=_fake_sessions()):
         runner = CliRunner()
-        result = runner.invoke(main, ["recent", "--limit", "5"])
+        result = runner.invoke(main, ["recent", "--limit", "5", "--source", "cli"])
     assert result.exit_code == 0
     # aaaa é a mais recente (updated_at = now), bbbb depois (-2h), cccc por último (-15d)
     pos_a = result.output.find("aaaa")
@@ -83,9 +83,9 @@ def test_recent_orders_by_updated_at_desc():
 
 
 def test_recent_marks_active_sessions():
-    with patch("kiro_dash.cli.load_all_sessions", return_value=_fake_sessions()):
+    with patch("kiro_dash.parser.load_all_sessions", return_value=_fake_sessions()):
         runner = CliRunner()
-        result = runner.invoke(main, ["recent"])
+        result = runner.invoke(main, ["recent", "--source", "cli"])
     assert result.exit_code == 0
     # Pelo menos um marcador visual para 'aaaa' (que tem is_active=True)
     # — usamos '●' como marcador (igual ao `session`)
@@ -93,7 +93,7 @@ def test_recent_marks_active_sessions():
 
 
 def test_projects_window_all_inclui_tudo():
-    with patch("kiro_dash.cli.load_all_sessions", return_value=_fake_sessions()):
+    with patch("kiro_dash.parser.load_all_sessions", return_value=_fake_sessions()):
         runner = CliRunner()
         result = runner.invoke(main, ["projects", "--window", "all"])
     assert result.exit_code == 0
@@ -102,7 +102,7 @@ def test_projects_window_all_inclui_tudo():
 
 
 def test_projects_window_invalid_returns_error():
-    with patch("kiro_dash.cli.load_all_sessions", return_value=_fake_sessions()):
+    with patch("kiro_dash.parser.load_all_sessions", return_value=_fake_sessions()):
         runner = CliRunner()
         result = runner.invoke(main, ["projects", "--window", "ontem"])
     assert result.exit_code != 0
@@ -110,21 +110,21 @@ def test_projects_window_invalid_returns_error():
 
 
 def test_today_filter_by_agent_nao_quebra():
-    with patch("kiro_dash.cli.load_all_sessions", return_value=_fake_sessions()):
+    with patch("kiro_dash.parser.load_all_sessions", return_value=_fake_sessions()):
         runner = CliRunner()
         result = runner.invoke(main, ["today", "--agent", "kiro_default"])
     assert result.exit_code == 0
 
 
 def test_projects_filter_by_agent_nao_quebra():
-    with patch("kiro_dash.cli.load_all_sessions", return_value=_fake_sessions()):
+    with patch("kiro_dash.parser.load_all_sessions", return_value=_fake_sessions()):
         runner = CliRunner()
         result = runner.invoke(main, ["projects", "--agent", "kiro_default"])
     assert result.exit_code == 0
 
 
 def test_models_filter_by_agent_inexistente_mostra_vazio():
-    with patch("kiro_dash.cli.load_all_sessions", return_value=_fake_sessions()):
+    with patch("kiro_dash.parser.load_all_sessions", return_value=_fake_sessions()):
         runner = CliRunner()
         result = runner.invoke(main, ["models", "--agent", "inexistente"])
     assert result.exit_code == 0
@@ -132,7 +132,7 @@ def test_models_filter_by_agent_inexistente_mostra_vazio():
 
 
 def test_recent_filter_by_agent():
-    with patch("kiro_dash.cli.load_all_sessions", return_value=_fake_sessions()):
+    with patch("kiro_dash.parser.load_all_sessions", return_value=_fake_sessions()):
         runner = CliRunner()
         result = runner.invoke(main, ["recent", "--agent", "kiro_default"])
     assert result.exit_code == 0

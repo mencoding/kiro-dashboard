@@ -18,7 +18,6 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 from kiro_dash.backends import Backend, Capability
 
@@ -262,7 +261,6 @@ class IdeStateBackend(Backend):
 
     def __init__(self, db_path: Path | None = None):
         self._db_path = db_path or DEFAULT_IDE_STATE_VSCDB
-        self._cached_state: IdeUsageState | None | Any = ...
 
     @property
     def slug(self) -> str:
