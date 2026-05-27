@@ -1,9 +1,9 @@
 # Wave 6 / Frente Q — `IdeSessionBackend` para sessões IDE
 
 **Branch:** `feat/wave6-ide-sessions`
-**Esforço:** 8-10h
+**Esforço:** 6-7h (revisado pós-coleta de 2026-05-27)
 **Depende de:** P (Backend ABC + sources.py + freshness)
-**Entrega:** sessões do Kiro IDE (chat, do, spec) acessíveis via comandos do kiro-dash, com créditos por turn extraídos dos arquivos de execution e classificação de intent disponível como dimensão extra.
+**Entrega:** sessões do Kiro IDE (workflow=chat-agent com intent ∈ {chat,do,spec} + workflow=spec-generation) acessíveis via comandos do kiro-dash, com créditos por turn extraídos das executions e classificação de intent disponível como dimensão extra.
 
 ## Objetivo
 
@@ -18,44 +18,114 @@ configurando `[sources].default = "ide"` no config.
 
 ## Pré-condições
 
-- Frente P mergeada na `main`
-- Fixtures adicionais coletadas durante a frente:
-  - 1 turn em modo `do-agent` (Léo executa antes do início desta frente)
-  - 1 turn que crie/edite uma `spec` (Léo executa antes desta frente)
-  - 1 turn que chame uma tool real (read/write de arquivo via Autopilot)
-- Schema observado durante coleta documentado em `docs/adr/0001-multi-backend-architecture.md` (anexo se necessário)
+- ✅ Frente P mergeada na `main` (commit `2375b41`)
+- ✅ Material observacional coletado em 2026-05-27: 14 executions reais (chat / do múltiplas variantes / spec-dispatch / spec-generation / running) cobrindo todos os workflow_types e action_types previstos
+- ✅ Schema observado documentado nas decisões #4-#10 abaixo
+- ✅ Esforço revisado para baixo após coleta: 6-7h (era 8-10h)
 
-## Decisões consolidadas (revisar antes de codar)
+## Decisões consolidadas (revisadas após coleta — 2026-05-27)
+
+> **Nota:** estas decisões refletem o schema **observado** em 14 executions
+> reais coletadas em 2026-05-27 (1 chat, 6 do, 4 spec-dispatch, 3
+> spec-generation, 1 spec-generation running). O schema pré-coleta
+> (commit anterior) tinha imprecisões corrigidas aqui.
 
 1. **Identidade composta** `ide:<sessionId>` — slug fixo, sessionId UUID nativo do IDE
+
 2. **Workspace path codificado em base64url** com padding por `=` substituído por `_`. Decoder espelha o encoder:
    - `L2hvbWUvbWVuemFuaS9EZXNlbnZvbHZpbWVudG8vbWVuY29kaW5nL2N2YXQtYWRlcHR1cw__` → `/home/menzani/Desenvolvimento/mencoding/cvat-adeptus`
-3. **`profile_hash` é opaque** para o kiro-dash. Detectado pela presença do arquivo `f62de366d0006e17ea00a01f6624aabf` (catálogo de executions) dentro de `kiro.kiroagent/<hash>/`. Pode haver múltiplos profile_hash se usuário trocou de conta — todos são lidos
-4. **Mapping para tipo interno:**
+
+3. **`profile_hash` é opaque** para o kiro-dash. Detectado pela presença do arquivo `f62de366d0006e17ea00a01f6624aabf` (catálogo de executions) dentro de `kiro.kiroagent/<hash>/`. Pode haver múltiplos profile_hash se usuário trocou de conta — todos são lidos. Há também um symlink `kiro.kiroagent/default/f62de366d0006e17ea00a01f6624aabf` apontando para o profile ativo (44B vs 402B no real).
+
+4. **`workflowType` é BIPARTITE, não tripartite:**
+   ```
+   workflowType ∈ {chat-agent, spec-generation}
+   ```
+   A distinção real entre chat/do/spec acontece em **dois níveis combinados**:
+
+   | Cenário | `workflowType` | `intent.classification` | comportamento |
+   |---|---|---|---|
+   | Pergunta simples | `chat-agent` | `chat` | model + say |
+   | Autopilot executa | `chat-agent` | `do` | model + tools (read/write/bash) |
+   | Pedido de spec (light) | `chat-agent` | `spec` | model + `specAgent` action |
+   | Geração da spec (pesada) | `spec-generation` | (ausente — sub-execução) | invokeSubAgent + write/create + search |
+
+   Pedido de spec dispara **2 executions encadeadas**: primeiro `chat-agent intent=spec` (orçamento baixo, ~0.008 cr) que invoca specAgent, depois `spec-generation` (orçamento alto, ~0.5-4 cr) que de fato gera os arquivos.
+
+5. **Mapping para tipo interno:**
    - `Session` (kiro-dash) ← `<sessionId>.json` (IDE)
-   - `Turn` (kiro-dash) ← cada par `(history[i] user, history[i+1] assistant)` em IDE session, juntado com a execution correspondente para extrair `usageSummary[].usage` (créditos)
-   - `ToolCall` ← `actions[]` em execution, filtrado por `actionType == "tool"`
-5. **Agent normalizado:** todas sessões IDE têm `agent = "kiro-ide"` no domínio interno. Variabilidade fica no campo novo `workflow_type` ∈ {`chat-agent`, `do-agent`, `spec`}
-6. **Modelo:** `selectedModel` quando explícito (`auto`, modelo nomeado), ou `defaultModelTitle` (`Agent`) como fallback. Quando `selectedModel == "auto"`, marcar como `kiro:auto` no domínio interno
-7. **Sessão "live":** sem lockfile, heurística é `active: true` no JSON da sessão **+** mtime do arquivo < threshold (default 60s)
-8. **Project label:** workspace path do IDE entra na heurística existente de `project.py`; mesma regra de `cwd` do CLI
+   - `Turn` (kiro-dash) ← cada `<execution>` cujo `chatSessionId == session.sessionId`. **Não pareamos history[i]/history[i+1]** — a `history[]` da sessão é só o registro UI, com mensagens do usuário; cada turno completo (input + processamento + output) é uma execution. As executions `spec-generation` ficam linkadas à execution `chat-agent intent=spec` que a disparou (mesmo `chatSessionId`); na visão de Turn, somar créditos de ambas como UM turn lógico (`spec`)
+   - `ToolCall` ← derivado de **`usageSummary[].usedTools[]`** (fonte autoritativa de tool name). O `actions[]` array é detalhe de execução; cada fase de `model` do `usageSummary` corresponde a 1 LLM call que pode ter invocado tools listados em `usedTools`. Para um ToolCall granular (1 entrada por tool), iterar fases não-vazias de `usedTools`. Para overview, somar `usage` por `usedTools[i]` agregado
+
+6. **Vocabulário de `actionType` (consolidado de 14 executions reais):**
+
+   | Categoria | actionTypes |
+   |---|---|
+   | Universais | `intentClassification`, `model`, `say` |
+   | Leitura | `readFile`, `readFiles`, `search` |
+   | Escrita/edição | `create`, `write`, `replace` |
+   | Execução shell | `runCommand`, `controlProcess`, `getProcessOutput` |
+   | Diagnóstico | `getDiagnostics` |
+   | Sub-agents | `invokeSubAgent`, `subagent_response` |
+   | Spec-only | `specAgent`, `userInput` |
+
+7. **Tool names normalizados** (fonte autoritativa = `usageSummary[].usedTools[]`):
+   ```
+   read_file, read_files, file_search, grep_search, list_directory
+   fs_write, str_replace
+   execute_bash, control_bash_process, get_process_output
+   getDiagnostics
+   invoke_sub_agent, subagent_response, report_progress
+   ```
+
+   Mapeamento `actionType → toolName` (não-óbvio, vem de campo):
+
+   | actionType | toolName(s) emitidos |
+   |---|---|
+   | `readFile` | `read_file` |
+   | `readFiles` | `read_files` (e/ou `read_file` ao agregar) |
+   | `search` | `file_search`, `grep_search`, `list_directory` |
+   | `create` | `fs_write` |
+   | `write` | `fs_write` |
+   | `replace` | `str_replace` |
+   | `runCommand` | `execute_bash` |
+   | `controlProcess` | `control_bash_process` |
+   | `getProcessOutput` | `get_process_output` |
+   | `getDiagnostics` | `getDiagnostics` |
+   | `invokeSubAgent` | `invoke_sub_agent` |
+   | `subagent_response` | `subagent_response` |
+
+8. **Agent normalizado:** todas sessões IDE têm `agent = "kiro-ide"` no domínio interno. Variabilidade fica em campos novos `Turn.metadata`:
+   - `workflow_type`: `chat-agent` ou `spec-generation`
+   - `intent`: `chat`, `do`, `spec`, ou `None` (em spec-generation sub-execução)
+
+9. **Modelo:** `selectedModel` quando explícito (`auto`, modelo nomeado), ou `defaultModelTitle` (`Agent`) como fallback. Quando `selectedModel == "auto"`, marcar como `kiro:auto` no domínio interno
+
+10. **Sessão "live":** **alguma execution da sessão tem `status == "running"`** no catálogo de executions. Indicador: `endTime: 0` produz `dur` negativa absurda quando computada. **Esta é a heurística primária** — substitui o esquema `active + mtime` originalmente proposto. Métricas de `mtime`/`active` viram fallback quando catálogo não traz status, mas com o catálogo isso raramente é necessário.
+
+11. **Project label:** workspace path do IDE entra na heurística existente de `project.py`; mesma regra de `cwd` do CLI
 
 ## Tasks (ordem TDD)
 
-### T1 — Fixtures redatadas
+### T1 — Fixtures redatadas (a partir do material real coletado em 2026-05-27)
 
-- Coletar com Léo (em sessão paralela ao desenvolvimento) ou usar dummy:
-  - `tests/fixtures/ide/sessions/sessions_index.json` — catálogo
-  - `tests/fixtures/ide/sessions/<uuid>_chat.json` — sessão chat
-  - `tests/fixtures/ide/sessions/<uuid>_do.json` — sessão do
-  - `tests/fixtures/ide/sessions/<uuid>_spec.json` — sessão spec
-  - `tests/fixtures/ide/executions/executions_index.json` — índice
-  - `tests/fixtures/ide/executions/<exec>_chat.json` — execution chat
-  - `tests/fixtures/ide/executions/<exec>_do.json` — execution do com tool calls
-  - `tests/fixtures/ide/executions/<exec>_spec.json` — execution spec
-- Helper `tests/fixtures/ide/build_ide_layout.py` cria o layout completo de filesystem em `tmp_path` para os testes
-- Conteúdo de mensagens **redatado** com placeholders curtos (`<user message redacted>`)
-- **Commit:** `test(fixtures): layout completo Kiro IDE redatado`
+Base: 14 executions reais + 1 sessão real (`8e2c534f-0296-4bc8-9048-196ca3521378`, workspace `cvat-adeptus`). Conteúdo de mensagens **redatado** com placeholders curtos; mantém schema, IDs sintéticos.
+
+- `tests/fixtures/ide/sessions/<uuid>_clean.json` — sessão "Clean State" minimalista
+- `tests/fixtures/ide/sessions/sessions_index.json` — catálogo workspace
+- `tests/fixtures/ide/executions/<exec>_chat.json` — chat-agent intent=chat (3 actions, ~0.094 cr)
+- `tests/fixtures/ide/executions/<exec>_do_simple.json` — chat-agent intent=do, tools=[execute_bash] (~0.146 cr)
+- `tests/fixtures/ide/executions/<exec>_do_complex.json` — chat-agent intent=do com process control (read+bash+control+getoutput, ~0.66 cr, 18 actions)
+- `tests/fixtures/ide/executions/<exec>_do_write.json` — chat-agent intent=do com fs_write+str_replace+getDiagnostics (~2.65 cr, 30 actions)
+- `tests/fixtures/ide/executions/<exec>_spec_dispatch.json` — chat-agent intent=spec (4 actions: intentClassification + model + specAgent + userInput, ~0.008 cr)
+- `tests/fixtures/ide/executions/<exec>_spec_generation.json` — workflow=spec-generation, 84 actions, com invokeSubAgent + subagent_response + create + write (~4.26 cr)
+- `tests/fixtures/ide/executions/<exec>_running.json` — workflow=spec-generation, status=running, endTime=0 (sessão live)
+- `tests/fixtures/ide/executions/executions_index.json` — catálogo com mistura succeed/aborted/running
+- `tests/fixtures/ide/build_ide_layout.py` — monta árvore filesystem completa em `tmp_path`, suportando 1+ profile_hash, 1+ workspace, n executions
+
+**Privacidade:** redatar `actions[].input.content`, `actions[].output.content`, `actions[].say.content`, `actions[].userInput.content`, `history[].message`, `history[].editorState`, `history[].contextItems[].content`. Manter: IDs, timestamps, status, workflowType, intent.classification, actionType, actionState, usageSummary, contextUsagePercentage, autonomyMode, selectedModel.
+
+**Commit:** `test(fixtures): layout completo Kiro IDE redatado (14 execs reais)`
 
 ### T2 — `workspace_codec.py`
 
@@ -104,27 +174,33 @@ configurando `[sources].default = "ide"` no config.
 - Resolve qual profile_hash dir contém via index
 - Typed model `IdeExecution`:
   - `execution_id`, `chat_session_id` (link com IdeSession)
-  - `workflow_type` ∈ {`chat-agent`, `do-agent`, `spec`}
-  - `start_time`, `end_time`, `status` ∈ {`succeed`, `failed`, ...}
-  - `actions: list[IdeAction]` — typed por actionType
-  - `usage_summary: list[IdeUsageEntry]` — `usage`, `unit`, `unit_plural`
-  - `intent_result: Optional[IdeIntent]` quando há `intentClassification` em actions
+  - **`workflow_type` ∈ {`chat-agent`, `spec-generation`}** — bipartite (decisão #4)
+  - `start_time`, `end_time`, `status` ∈ {`succeed`, `failed`, `aborted`, `running`}
+  - `actions: list[IdeAction]` — typed por actionType (vocabulário em decisão #6)
+  - `usage_summary: list[IdeUsageEntry]` — `usage`, `unit`, `unit_plural`, **`used_tools: list[str]`** quando presente
+  - `intent_result: Optional[IdeIntent]` quando há `intentClassification` em actions; `intent.classification ∈ {chat, do, spec}`. **Ausente em workflow=spec-generation** (sub-execução não passa por classifier)
   - `context_usage_percentage: float`
-- **Tests:** parsing das 3 fixtures + ausência graciosa de campos opcionais
+  - `autonomy_mode: str` — `Autopilot` ou outro modo futuro
+- **Tests:** parsing de cada uma das 7 fixtures + ausência graciosa de campos opcionais (`intent_result is None` em spec-generation)
 - **Commit:** `feat(ide-sessions): typed reader de execution com actions/usage/intent`
 
 ### T7 — Mapper IDE → tipo interno do kiro-dash
 
 - `src/kiro_dash/backends/ide_mapper.py`
 - `to_session(ide_session, executions_for_session) -> Session` (tipo interno)
-- `to_turn(ide_session.history_pair, execution) -> Turn`
-  - Créditos do turn: somar `usage` de `usage_summary` da execution correspondente
-  - Modelo: `selectedModel` (ou `kiro:auto` se "auto")
-  - Workflow type vai em `Turn.metadata["workflow_type"]`
-- `to_tool_calls(execution.actions) -> list[ToolCall]`:
-  - Filtra `actionType == "tool"`; cada uma vira ToolCall
-  - `actionType == "intentClassification"` vira ToolCall metadata especial (pode ser oculto na listagem default; opt-in via flag em Q ou R)
-- **Tests:** roundtrip de cada workflow_type para Session/Turn/ToolCall
+- `to_turn(execution) -> Turn` — **uma execution = 1 turn**:
+  - Créditos do turn: `sum(u.usage for u in execution.usage_summary)`
+  - Modelo: `selectedModel` (ou `kiro:auto` se "auto") da sessão; modelo efetivo por fase fica em metadata
+  - `metadata["workflow_type"]` = `chat-agent` ou `spec-generation`
+  - `metadata["intent"]` = `chat`, `do`, `spec`, ou `None`
+  - `metadata["actions_count"]` = `len(execution.actions)`
+  - `metadata["used_tools"]` = união de `usage_summary[].usedTools[]`
+  - **Spec lógico:** quando `intent=spec`, considerar a execution `spec-generation` linkada (mesmo `chatSessionId`, dispara em sequência) e somar créditos das duas em UM turn lógico. Default: turn = execution; flag `--split-spec-subexec` mostra as duas.
+- `to_tool_calls(execution) -> list[ToolCall]`:
+  - **Fonte autoritativa: `usageSummary[].usedTools[]`** (não `actionType == "tool"` — esse não existe; o vocabulário real é o de decisão #6)
+  - Cada fase do `usage_summary` que tenha `usedTools` não-vazio gera 1 ToolCall por tool, com créditos atribuídos proporcionalmente (split simples se múltiplos tools na mesma fase)
+  - `actionType == "intentClassification"` é metadata da execution, **não** vira ToolCall
+- **Tests:** roundtrip de cada cenário das 7 fixtures (chat, do_simple, do_complex, do_write, spec_dispatch, spec_generation, running)
 - **Commit:** `feat(ide-sessions): mapper schema IDE → tipo interno kiro-dash`
 
 ### T8 — `IdeSessionBackend.list_sessions()` + `iter_turns()`
@@ -138,14 +214,22 @@ configurando `[sources].default = "ide"` no config.
 - **Tests:** integração com mapper, comportamento equivalente ao CLI
 - **Commit:** `feat(ide-sessions): API list/iter equivalente ao CliJsonBackend`
 
-### T9 — Detecção de sessão live sem lockfile
+### T9 — Detecção de sessão live via catálogo de executions
 
-- Heurística em `running_sessions()`:
-  - `session.active == True` E `mtime > now - threshold` → live
-  - Threshold default 60s, configurável `[ide_sessions].live_threshold_seconds`
-- Cuidado: IDE pode ficar com `active: false` mas sessão ainda em uso (idle entre turns). A heurística é melhor-esforço, documentar limitação no help do `audit running`
-- **Tests:** sessões active+fresh, active+stale, inactive+fresh, inactive+stale
-- **Commit:** `feat(ide-sessions): heurística sessão live sem lockfile`
+- Heurística primária em `running_sessions()`:
+  - Ler catálogo `f62de366d0006e17ea00a01f6624aabf` de cada profile_hash
+  - **Sessão live ⇔ existe execution com `chatSessionId == session.id` E `status == "running"`** (decisão #10)
+  - Indicador secundário (validação): `endTime: 0` na execution running
+- Fallback (catálogo ausente ou execution running antiga abandonada >24h):
+  - `session.active == True` E `mtime > now - threshold` → live (apenas best-effort, log warning)
+- Threshold do fallback configurável `[ide_sessions].live_threshold_seconds = 60`
+- **Tests:**
+  - Catálogo com 1 execution running → live ✓
+  - Catálogo só com succeed → não-live
+  - Catálogo com running antiga (>24h) → fallback dispara
+  - Catálogo ausente → fallback puro
+  - Multiple sessions na mesma workspace, só uma com running → só ela live
+- **Commit:** `feat(ide-sessions): heurística live via execution.status=running`
 
 ### T10 — `Sources.ide_sessions` + integração no detector
 
@@ -226,29 +310,32 @@ include_intent_classification = false   # intent vira ToolCall visível? default
 
 Em `tests/fixtures/ide/`:
 
-- `sessions/sessions_index.json` — catálogo
-- `sessions/<uuid>_chat.json` — sessão chat (turn simples)
-- `sessions/<uuid>_do.json` — sessão do com 1 tool call
-- `sessions/<uuid>_spec.json` — sessão spec
-- `executions/executions_index.json`
-- `executions/<exec>_chat.json` — actions: intentClassification + chat
-- `executions/<exec>_do.json` — actions: intentClassification + chat + tool
-- `executions/<exec>_spec.json` — actions: intentClassification + spec workflow específico
-- `build_ide_layout.py` — monta a árvore de fs em `tmp_path`
+- `sessions/sessions_index.json` — catálogo workspace
+- `sessions/<uuid>_clean.json` — sessão "Clean State"
+- `executions/executions_index.json` — catálogo (succeed/aborted/running)
+- `executions/<exec>_chat.json` — chat-agent intent=chat (3 actions)
+- `executions/<exec>_do_simple.json` — chat-agent intent=do tools=[execute_bash]
+- `executions/<exec>_do_complex.json` — chat-agent intent=do (read+bash+control+getoutput, 18 actions)
+- `executions/<exec>_do_write.json` — chat-agent intent=do (fs_write+str_replace+getDiagnostics, 30 actions)
+- `executions/<exec>_spec_dispatch.json` — chat-agent intent=spec (specAgent+userInput, 4 actions)
+- `executions/<exec>_spec_generation.json` — workflow=spec-generation com invokeSubAgent (84 actions)
+- `executions/<exec>_running.json` — workflow=spec-generation status=running endTime=0
+- `build_ide_layout.py` — monta árvore filesystem em `tmp_path`, suporta múltiplos profile_hash, múltiplos workspaces, n executions
 
 ## Critérios de aceitação
 
-- [ ] `pytest tests/ -v` 100% verde
+- [ ] `pytest tests/ -v` 100% verde (~370+ testes — 301 atuais + ~70 novos)
 - [ ] `kiro-dash recent --source ide` lista sessões IDE
 - [ ] `kiro-dash recent --source all` concatena CLI+IDE com coluna source
 - [ ] `kiro-dash session <prefix>` resolve prefix em ambas fontes; ambíguo → pede desambiguação com slug
 - [ ] `kiro-dash today --source ide` agrega só IDE
-- [ ] `kiro-dash audit running --source all` lista sessões live de ambas fontes (com a limitação documentada da heurística IDE)
+- [ ] `kiro-dash audit running --source all` lista sessões live de ambas fontes (heurística IDE via `execution.status=running`)
 - [ ] `kiro-dash whoami` mostra IDE sessions com contagem
 - [ ] MCP tools aceitam `source` parameter
 - [ ] Sem regressão nos comandos sem `--source` (default `cli` preserva comportamento)
 - [ ] Documentação README atualizada com tabela de equivalências
-- [ ] Fixtures cobertas com 3 workflow_types (chat/do/spec)
+- [ ] Fixtures cobertas com 7 cenários (chat, do_simple, do_complex, do_write, spec_dispatch, spec_generation, running)
+- [ ] Spec lógico (chat-agent intent=spec + spec-generation) consolidado como 1 turn por default; `--split-spec-subexec` mostra os dois separados
 
 ## Pendências fora desta frente
 
