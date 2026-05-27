@@ -569,6 +569,8 @@ def recent(limit: int, agent: str | None) -> None:
 @click.option("--limit", default=20, type=int, help="Top N tools (default 20).")
 def tools(hours: int, limit: int) -> None:
     """Breakdown de tool calls nas últimas N horas (lê .jsonl)."""
+    from kiro_dash.visual import bar_inline
+
     aggs = aggregate_tools_in_window(DEFAULT_SESSIONS_DIR, hours=hours)
     if not aggs:
         console.print(f"[yellow]Nenhuma tool call nas últimas {hours}h.[/yellow]")
@@ -588,11 +590,14 @@ def tools(hours: int, limit: int) -> None:
     table = Table(title="Tools", expand=False, header_style="bold")
     table.add_column("tool")
     table.add_column("count", justify="right")
+    table.add_column("share")
     table.add_column("sessões", justify="right")
     table.add_column("erros", justify="right")
     for a in aggs:
+        pct = a["count"] / total if total else 0
+        bar = f"{bar_inline(pct, width=15)} {pct*100:5.1f}%"
         err_cell = Text(str(a["errors"]), style="red") if a["errors"] else Text("0", style="dim")
-        table.add_row(a["name"], str(a["count"]), str(a["sessions"]), err_cell)
+        table.add_row(a["name"], str(a["count"]), bar, str(a["sessions"]), err_cell)
     console.print(table)
 
 
