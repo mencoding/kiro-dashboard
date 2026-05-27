@@ -105,3 +105,21 @@ def test_audit_kill_nonexistent_sid():
         runner = CliRunner()
         result = runner.invoke(main, ["audit", "kill", "deadbeef"], input="t\n")
     assert result.exit_code != 0
+
+
+def test_audit_log_no_session_errors():
+    runner = CliRunner()
+    with patch("kiro_dash.cli.discover_sessions", return_value=[]):
+        result = runner.invoke(main, ["audit", "log", "deadbeef"])
+    assert result.exit_code != 0
+
+
+def test_audit_log_no_jsonl_warns(tmp_path):
+    from pathlib import Path
+    fake_json = tmp_path / "abcdef12.json"
+    fake_json.write_text("{}")
+    with patch("kiro_dash.cli.discover_sessions", return_value=[fake_json]):
+        runner = CliRunner()
+        result = runner.invoke(main, ["audit", "log", "abcdef12"])
+    assert result.exit_code == 0
+    assert "não tem .jsonl" in result.output
