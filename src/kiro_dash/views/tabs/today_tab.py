@@ -54,6 +54,14 @@ def _aggs_to_rows(aggs: list[Aggregate]) -> list[tuple[str, ...]]:
     ]
 
 
+def _aggs_to_rows_no_sessions(aggs: list[Aggregate]) -> list[tuple[str, ...]]:
+    """Variante para a tabela 'Por sessão' — agrupamento 1:1, omite ``sessões``."""
+    return [
+        (a.label, f"{a.credits:.2f}", str(a.turns))
+        for a in aggs
+    ]
+
+
 def _agent_pair_to_rows(aggs: list[AgentPairAgg]) -> list[tuple[str, ...]]:
     return [
         (a.runtime, a.persona, f"{a.credits:.2f}", str(a.turns), str(a.sessions))
@@ -78,9 +86,12 @@ class TodayTab(Container):
 
     def on_mount(self) -> None:
         # Tabelas com 4 colunas (label, créditos, turns, sessões)
-        for tid in ("#today-models", "#today-projects", "#today-sessions"):
+        for tid in ("#today-models", "#today-projects"):
             t = self.query_one(tid, DataTable)
             t.add_columns("label", "créditos", "turns", "sessões")
+        # Tabela "Por sessão" sem coluna sessões (1:1 — sempre 1)
+        t = self.query_one("#today-sessions", DataTable)
+        t.add_columns("label", "créditos", "turns")
         # Tabela de agent tem 5 colunas (runtime, persona, créditos, turns, sessões)
         t = self.query_one("#today-agents", DataTable)
         t.add_columns("runtime", "persona", "créditos", "turns", "sessões")
@@ -95,16 +106,21 @@ class TodayTab(Container):
             f"[dim]{snap.total_turns} turns / {snap.total_sessions} sessões[/dim]"
         )
 
-        # Agregados de 4 colunas
+        # Agregados de 4 colunas (label, créditos, turns, sessões)
         for tid, aggs in [
             ("#today-models", snap.by_model),
             ("#today-projects", snap.by_project),
-            ("#today-sessions", snap.by_session),
         ]:
             t = self.query_one(tid, DataTable)
             t.clear()
             for row in _aggs_to_rows(aggs):
                 t.add_row(*row)
+
+        # "Por sessão": 3 colunas (label, créditos, turns)
+        t = self.query_one("#today-sessions", DataTable)
+        t.clear()
+        for row in _aggs_to_rows_no_sessions(snap.by_session):
+            t.add_row(*row)
 
         # Agent: 5 colunas
         t = self.query_one("#today-agents", DataTable)

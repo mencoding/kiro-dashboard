@@ -110,23 +110,32 @@ def _fmt_relative_time(dt: datetime | None) -> str:
     return f"{int(delta // 86400)}d atrás"
 
 
-def _aggregates_table(title: str, aggs: list[Aggregate], label_header: str) -> Table:
+def _aggregates_table(
+    title: str,
+    aggs: list[Aggregate],
+    label_header: str,
+    *,
+    show_sessions: bool = True,
+) -> Table:
+    """Tabela genérica de Aggregate.
+
+    ``show_sessions=False`` esconde a coluna ``sessões`` — usado na tabela
+    "Por sessão" porque o agrupamento é 1:1 (sempre 1).
+    """
     table = Table(title=title, expand=False, header_style="bold")
     table.add_column(label_header)
     table.add_column("créditos", justify="right")
     table.add_column("turns", justify="right")
-    table.add_column("sessões", justify="right")
+    if show_sessions:
+        table.add_column("sessões", justify="right")
     table.add_column("duração", justify="right")
     table.add_column("tools", justify="right")
     for a in aggs:
-        table.add_row(
-            a.label,
-            _fmt_credits(a.credits),
-            str(a.turns),
-            str(a.sessions),
-            _fmt_duration(a.duration),
-            str(a.tool_uses),
-        )
+        row = [a.label, _fmt_credits(a.credits), str(a.turns)]
+        if show_sessions:
+            row.append(str(a.sessions))
+        row.extend([_fmt_duration(a.duration), str(a.tool_uses)])
+        table.add_row(*row)
     return table
 
 
@@ -252,7 +261,7 @@ def today(day_str: str | None, agent: str | None) -> None:
     console.print(_agent_pair_table(aggregate_by_agent_pair(pairs)))
     aliases = load_aliases(default_config_path())
     console.print(_aggregates_table("Por projeto", aggregate_by_project(pairs, aliases=aliases), "projeto"))
-    console.print(_aggregates_table("Por sessão", aggregate_by_session(pairs), "sessão"))
+    console.print(_aggregates_table("Por sessão", aggregate_by_session(pairs), "sessão", show_sessions=False))
 
 
 # ─── session ─────────────────────────────────────────────────────────────
