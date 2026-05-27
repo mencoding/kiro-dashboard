@@ -35,3 +35,12 @@ def test_build_now_snapshot_empty_when_no_active():
     snap = build_now_snapshot([make_session(session_id="x", is_active=False)])
     assert snap.active_count == 0
     assert snap.rows == []
+
+from kiro_dash.views.tabs.today_tab import build_today_snapshot
+
+
+def test_build_today_snapshot_aggregates():
+    sessions = _two_sessions()
+    snap = build_today_snapshot(sessions)
+    assert len(snap.by_model) >= 1
+    assert snap.total_credits >= 0
