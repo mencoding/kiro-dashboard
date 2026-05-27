@@ -772,6 +772,92 @@ def audit_stuck(threshold: int) -> None:
     console.print(table)
 
 
+@audit.command("kill")
+@click.argument("sid_prefix")
+@click.option("--all-stuck", is_flag=True, default=False,
+              help="Mata todas as sessões travadas (>threshold).")
+@click.option("--threshold", default=600, type=int,
+              help="Threshold para --all-stuck (default 600s).")
+@click.option("--yes", is_flag=True, default=False,
+              help="Não pergunta — força SIGTERM (use com --all-stuck).")
+def audit_kill(sid_prefix: str, all_stuck: bool, threshold: int, yes: bool) -> None:
+    """Mata sessão por prefixo de SID. Pergunta TERM/KILL/cancel."""
+    sessions = load_all_sessions()
+
+    if all_stuck:
+        stuck = stuck_sessions(sessions, threshold_secs=threshold)
+        if not stuck:
+            console.print(f"[green]Nenhuma travada > {threshold}s.[/green]")
+            return
+        console.print(f"[yellow]{len(stuck)} sessões serão terminadas:[/yellow]")
+        for s, info in stuck:
+            console.print(f"  - {s.session_id[:8]} (PID {info.pid})")
+        if not yes:
+            confirm = click.prompt(
+                "Confirma SIGTERM em todas? [y/N]", default="N",
+            ).strip().lower()
+            if confirm != "y":
+                console.print("[dim]Cancelado.[/dim]")
+                return
+        for s, info in stuck:
+            r = watchdog_kill_session(s.session_id, sig=_signal.SIGTERM)
+            _print_kill_result(r)
+        return
+
+    # Modo single — sid_prefix
+    matches = [s for s in sessions if s.session_id.startswith(sid_prefix)]
+    if not matches:
+        console.print(f"[red]Sem sessão com prefixo '{sid_prefix}'.[/red]")
+        raise SystemExit(1)
+    if len(matches) > 1:
+        console.print(f"[red]Prefixo ambíguo, casa {len(matches)} sessões.[/red]")
+        raise SystemExit(1)
+
+    s = matches[0]
+    info = read_lock(s.session_id)
+    if info is None:
+        console.print(f"[red]Sessão {s.session_id[:8]} não tem lockfile (não está ativa).[/red]")
+        raise SystemExit(1)
+
+    age_secs = int((datetime.now(timezone.utc) - info.started_at).total_seconds())
+
+    console.print(Panel(
+        f"[bold]{s.session_id}[/bold]\n"
+        f"agent: {s.agent_name}  modelo: {s.model_id}\n"
+        f"cwd: {s.cwd}\n"
+        f"PID: [bold]{info.pid}[/bold]  idade: {_fmt_age(age_secs)}\n"
+        f"último turn: {'em curso' if is_session_running(s) else 'finalizado'}",
+        title="Sessão", expand=False,
+    ))
+
+    console.print(
+        "\nComo terminar?\n"
+        "  [bold cyan]t[/bold cyan]erm    — SIGTERM (graceful)\n"
+        "  [bold red]k[/bold red]ill    — SIGKILL (forçado)\n"
+        "  [bold]c[/bold]ancel  — não fazer nada"
+    )
+    choice = click.prompt("> ", default="c").strip().lower()[:1]
+
+    if choice == "c":
+        console.print("[dim]Cancelado.[/dim]")
+        return
+
+    sig = _signal.SIGTERM if choice == "t" else _signal.SIGKILL if choice == "k" else None
+    if sig is None:
+        console.print(f"[red]Resposta inválida: '{choice}'. Use t/k/c.[/red]")
+        raise SystemExit(2)
+
+    r = watchdog_kill_session(s.session_id, sig=sig)
+    _print_kill_result(r)
+
+
+def _print_kill_result(r) -> None:
+    if r.ok:
+        console.print(f"[green]✓[/green] {r.sid[:8]} — {r.signal} enviado pra PID {r.pid}")
+    else:
+        console.print(f"[red]✗[/red] {r.sid[:8]} — falha: {r.error}")
+
+
 # ─── tui ──────────────────────────────────────────────────────────────────
 
 
