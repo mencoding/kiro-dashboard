@@ -874,10 +874,16 @@ def recent(
 @click.option("--hours", default=24, type=int, help="Janela em horas (default 24).")
 @click.option("--limit", default=20, type=int, help="Top N tools (default 20).")
 def tools(hours: int, limit: int) -> None:
-    """Breakdown de tool calls nas últimas N horas (lê .jsonl)."""
+    """Breakdown de tool calls nas últimas N horas.
+
+    Em v0.7.0+ inclui CLI (transcripts ``.jsonl``) **e** IDE
+    (``execution.usage_summary[].usedTools``). Para forçar só CLI,
+    desabilite o IDE com ``KIRO_DASH_NO_IDE_SESSIONS=1``.
+    """
+    from kiro_dash.aggregator import aggregate_tools_in_window_combined
     from kiro_dash.visual import bar_inline
 
-    aggs = aggregate_tools_in_window(DEFAULT_SESSIONS_DIR, hours=hours)
+    aggs = aggregate_tools_in_window_combined(DEFAULT_SESSIONS_DIR, hours=hours)
     if not aggs:
         console.print(f"[yellow]Nenhuma tool call nas últimas {hours}h.[/yellow]")
         return
@@ -937,17 +943,48 @@ def sync() -> None:
 
 @sync.command("push")
 @click.option("--remote", default=_DEFAULT_REMOTE, help="Nome do remote rclone.")
-def sync_push_cmd(remote: str) -> None:
-    """Envia .json locais para o Drive (aditivo, não-destrutivo)."""
+@click.option(
+    "--include-ide",
+    is_flag=True,
+    default=False,
+    help=(
+        "Inclui sessões do Kiro IDE no push (redatadas — sem conteúdo "
+        "de mensagens; ver privacidade no README). Default off."
+    ),
+)
+def sync_push_cmd(remote: str, include_ide: bool) -> None:
+    """Envia .json locais para o Drive (aditivo, não-destrutivo).
+
+    Por default sincroniza apenas ``~/.kiro/sessions/cli/``. Com
+    ``--include-ide``, também envia
+    ``~/.config/Kiro/User/globalStorage/kiro.kiroagent/workspace-sessions/``
+    redatado (history.message, actions.input/output, rawInput,
+    editorState filtrados).
+    """
     cfg = _ensure_rclone(remote)
     if cfg is None:
         raise SystemExit(1)
     console.print(f"[dim]Enviando {DEFAULT_SESSIONS_DIR} → {cfg.remote_uri}…[/dim]")
     ok, err = sync_push(cfg, DEFAULT_SESSIONS_DIR)
     if not ok:
-        console.print(f"[red]Falha: {err}[/red]")
+        console.print(f"[red]Falha CLI: {err}[/red]")
         raise SystemExit(1)
-    console.print("[green]Push concluído.[/green]")
+    console.print("[green]Push CLI concluído.[/green]")
+
+    if include_ide:
+        from kiro_dash.backends.ide_sessions import DEFAULT_IDE_SESSIONS_ROOT
+        from kiro_dash.sync import sync_push_ide
+
+        ide_root = DEFAULT_IDE_SESSIONS_ROOT
+        if not ide_root.is_dir():
+            console.print("[yellow]Kiro IDE não detectado; --include-ide ignorado.[/yellow]")
+            return
+        console.print(f"[dim]Enviando IDE (redatado) → {cfg.remote_uri}/ide-sessions/…[/dim]")
+        ok_ide, err_ide = sync_push_ide(cfg, ide_root)
+        if not ok_ide:
+            console.print(f"[red]Falha IDE: {err_ide}[/red]")
+            raise SystemExit(1)
+        console.print("[green]Push IDE (redatado) concluído.[/green]")
 
 
 @sync.command("pull")

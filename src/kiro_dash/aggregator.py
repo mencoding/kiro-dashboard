@@ -380,3 +380,89 @@ def aggregate_tools_in_window(
         }
         for name, cnt in counts.most_common()
     ]
+
+
+def aggregate_tools_in_window_ide(
+    *,
+    hours: int = 24,
+    sources=None,
+    now: datetime | None = None,
+) -> list[dict]:
+    """Conta tool calls de sessões IDE na janela de ``hours``.
+
+    Equivalente a :func:`aggregate_tools_in_window` mas para o backend
+    IDE: percorre executions cuja ``start_time`` cai na janela e
+    agrega ``usage_summary[].usedTools`` por nome de tool. Adicionado
+    na Wave 7 (T3-W7) para cobrir IDE no comando ``tools``.
+
+    IDE não expõe falha granular por tool; ``errors`` é sempre 0
+    (placeholder) para manter o shape compatível com o agregado CLI.
+    """
+    if sources is None:
+        # Lazy import para evitar ciclo
+        from kiro_dash.sources import Sources
+
+        sources = Sources.detect()
+    backend = getattr(sources, "ide_sessions", None)
+    if backend is None:
+        return []
+
+    n = _resolve_now(now)
+    cutoff = n - timedelta(hours=hours)
+
+    counts: Counter[str] = Counter()
+    sessions_by_name: dict[str, set[str]] = defaultdict(set)
+
+    # Acessar diretamente o índice de executions para evitar
+    # construir Session/Turn quando só queremos tools.
+    exec_index = backend._executions_by_session_id()  # type: ignore[attr-defined]
+    for sid, executions in exec_index.items():
+        for ex in executions:
+            if ex.start_time < cutoff:
+                continue
+            for usage in ex.usage_summary:
+                for tool_name in usage.used_tools:
+                    counts[tool_name] += 1
+                    sessions_by_name[tool_name].add(sid)
+
+    return [
+        {
+            "name": name,
+            "count": cnt,
+            "sessions": len(sessions_by_name[name]),
+            "errors": 0,  # IDE não expõe falha granular por tool
+        }
+        for name, cnt in counts.most_common()
+    ]
+
+
+def aggregate_tools_in_window_combined(
+    sessions_dir: Path,
+    *,
+    hours: int = 24,
+    sources=None,
+    now: datetime | None = None,
+) -> list[dict]:
+    """Combina tools CLI (.jsonl) + IDE (executions) na janela.
+
+    Retorna lista deduplicada por nome de tool, somando counts e
+    sessions. Errors herdam do agregado CLI (IDE sempre 0).
+    """
+    cli_aggs = aggregate_tools_in_window(sessions_dir, hours=hours)
+    ide_aggs = aggregate_tools_in_window_ide(hours=hours, sources=sources, now=now)
+
+    by_name: dict[str, dict] = {}
+    for entry in cli_aggs + ide_aggs:
+        name = entry["name"]
+        if name not in by_name:
+            by_name[name] = {
+                "name": name,
+                "count": 0,
+                "sessions": 0,
+                "errors": 0,
+            }
+        by_name[name]["count"] += entry["count"]
+        by_name[name]["sessions"] += entry["sessions"]
+        by_name[name]["errors"] += entry["errors"]
+
+    return sorted(by_name.values(), key=lambda d: d["count"], reverse=True)

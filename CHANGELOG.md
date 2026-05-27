@@ -74,20 +74,47 @@ Wave 6 — suporte multi-backend (Kiro CLI + Kiro IDE) consolidado.
   frescor.
 - **README env vars consolidadas** em tabela única.
 
-### Diferido para Wave 7
+### Wave 7 — finalização das pendências (aplicado pré-release)
 
-- **Sync rclone cobrindo IDE sessions** — implementação segura
-  precisa redator de mensagens robusto.
-- **TUI seletor de source** (atalho `s`) e **TUI badge de saldo
-  no header**.
-- **Comandos `tools` (transcript .jsonl) com flag `--source`** —
-  esse caminho lê arquivos `.jsonl` do CLI; IDE expõe tools via
-  `usage_summary[].usedTools[]` por outro caminho. Unificar é
-  trabalho de Wave 7.
-- **Consolidação spec lógica** (chat-agent intent=spec +
-  spec-generation linkadas em 1 turn).
-- **`rate_multiplier` por modelo IDE** — atualmente fixo em 1.0
-  (tabela de mapping é refactor de Wave 7).
+Após o code review da Wave 6, os 5 itens diferidos para "Wave 7"
+foram implementados antes do tag final:
+
+- **T1-W7**: tabela `_MODEL_RATE_MULTIPLIERS` em `ide_mapper.py`
+  + função `rate_multiplier_for_model(model_id)` com match exato
+  e por prefixo. Cobre Opus 4.7/4.5/4 (2.2/2.0), Sonnet 4.5/4/3.5
+  (1.0), Haiku 4.5/4 (0.3). Aplicado em `to_session`.
+- **T2-W7**: `consolidate_spec_executions(executions)` em
+  `ide_mapper.py` é função opt-in (default fluxo permanece "1
+  execution = 1 turn") que detecta padrão chat-agent intent=spec
+  + spec-generation linkadas e funde em 1 IdeExecution lógico
+  (preservando execution_id do dispatcher, somando créditos).
+- **T3-W7**: comando `tools` agora cobre CLI **e** IDE.
+  `aggregate_tools_in_window_combined` deduplica por nome somando
+  counts. Tools IDE vêm de `usage_summary[].usedTools[]`.
+  `KIRO_DASH_NO_IDE_SESSIONS=1` desabilita parcela IDE.
+- **T4-W7**: módulo `sync_redactor.py` com redação pura
+  (sem I/O, idempotente, deep-copy) de sessões IDE para sync seguro.
+  `sync.sync_push_ide(cfg, ide_root)` cria temp dir staged +
+  rclone copy + cleanup. Comando CLI `sync push --include-ide`.
+  Vocabulário redatado: `history.message`, `editorState`,
+  `actions.input.{content,fileText,command,oldStr,newStr,message}`,
+  `actions.output.{content,message,output,response}`,
+  `actions.rawInput`, `input.data.messages`, `context.messages`.
+- **T5-W7 + T6-W7**: TUI ganhou binding `s` que cicla
+  `current_source` ∈ {`all`, `cli`, `ide`} (estado visual com
+  notify). `sub_title` do header mostra `source=X · saldo:
+  cur/lim (pct%) [color · age]` quando IDE detectado. **Limitação**:
+  tabs ainda lêem all por default em v0.7.0; filtro por aba é
+  Wave 8.
+
+### Diferido para Wave 8 (futuro)
+
+- **Filtro real por source nas tabs da TUI** — T5-W7 hoje é só
+  visual; tabs continuam lendo all default.
+- **Migração v1→v2 de snapshots reescrevendo arquivos no disco**
+  — atual é só in-memory.
+- **TUI card dedicado de saldo no Now tab** — T6-W7 só fez
+  subtitle.
 - **Migração v1→v2 com `internal_session_id` em UUID truncado**
   — aceitável best-effort; lookups cross-version dão miss.
 
