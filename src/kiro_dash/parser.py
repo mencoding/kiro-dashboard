@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from kiro_dash.cache import sessions_cache
-from kiro_dash.models import Session, Turn
+from kiro_dash.models import LockInfo, Session, Turn
 
 DEFAULT_SESSIONS_DIR = Path.home() / ".kiro" / "sessions" / "cli"
 
@@ -307,3 +307,20 @@ def load_all_sessions(sessions_dir: Path | None = None) -> list[Session]:
         if s is not None:
             out.append(s)
     return out
+
+
+def read_lock(sid: str, sessions_dir: Path | None = None) -> LockInfo | None:
+    """Lê ``<sid>.lock`` e devolve ``LockInfo`` ou ``None``."""
+    base = sessions_dir or DEFAULT_SESSIONS_DIR
+    lock_path = base / f"{sid}.lock"
+    if not lock_path.exists():
+        return None
+    try:
+        with open(lock_path) as f:
+            data = json.load(f)
+        started_at = _parse_iso(data["started_at"])
+        if started_at is None:
+            return None
+        return LockInfo(pid=int(data["pid"]), started_at=started_at)
+    except (OSError, KeyError, ValueError, json.JSONDecodeError):
+        return None

@@ -263,6 +263,42 @@ Para desligar pontualmente: `KIRO_DASH_NO_CACHE=1 kiro-dash today`.
 
 > Com 21 sessões o startup do Python domina. O ganho será visível com
 > workspaces maiores (50+ sessões) onde o parse JSON é o gargalo.
+## Watchdog operacional (audit)
+
+Sem hooks, sem root. Lê os arquivos `.json`/`.lock` que o Kiro CLI já
+gera nativamente.
+
+### Inspecionar
+
+```bash
+kiro-dash audit running                  # sessões com turn em curso
+kiro-dash audit stuck --threshold 600    # turns em curso > 10 min
+kiro-dash audit log <sid> --tail 20      # tool calls da sessão
+kiro-dash audit watch                    # live (refresh 2s, Ctrl+C sai)
+```
+
+### Matar processo travado
+
+```bash
+kiro-dash audit kill <sid>               # interativo: TERM / KILL / cancel
+kiro-dash audit kill --all-stuck         # mata todas travadas
+kiro-dash audit kill --all-stuck --yes   # sem confirmação
+```
+
+**SIGTERM** (graceful): pede ao Kiro que feche. Pode demorar segundos
+mas preserva o estado da sessão (`.json` é finalizado, `.jsonl` flusha).
+
+**SIGKILL** (forçado): kernel mata na hora. Estado pode ficar
+inconsistente. Use quando SIGTERM não responder.
+
+### Limitações
+
+- Detecta travamento com base em "turn em curso há > threshold". Não há
+  heurística para distinguir "travado" de "trabalhando muito". Calibre
+  o threshold conforme uso (3m para tarefas curtas, 30m para builds).
+- Mata o processo do shell que executa `kiro-cli`, não dependências
+  spawn-adas (subagents, MCPs). Para garantir, `kill -SIGKILL -PGID`
+  pode ser melhor — não implementado por enquanto.
 
 ## Licença
 

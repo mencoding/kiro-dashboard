@@ -8,7 +8,7 @@ from kiro_dash.models import Session, Turn
 
 def make_turn(
     *,
-    end_timestamp: datetime,
+    end_timestamp: datetime | None = None,
     agent_name: str = "kiro_default",
     parent_agent_id: str | None = None,
     duration_seconds: float = 1.0,

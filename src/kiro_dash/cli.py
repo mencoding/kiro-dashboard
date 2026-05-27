@@ -8,6 +8,7 @@ Subcomandos:
 """
 from __future__ import annotations
 
+import signal as _signal
 import time
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -54,6 +55,7 @@ from kiro_dash.parser import (
     find_session_by_prefix,
     load_all_sessions,
     load_session_file,
+    read_lock,
 )
 from kiro_dash.sync import (
     SyncConfig,
@@ -62,6 +64,13 @@ from kiro_dash.sync import (
     sync_pull,
     sync_push,
 )
+from kiro_dash.watchdog import (
+    is_session_running,
+    kill_session as watchdog_kill_session,
+    running_sessions,
+    stuck_sessions,
+)
+from kiro_dash.jsonl_parser import iter_tool_calls
 
 console = Console()
 
@@ -751,6 +760,257 @@ def balance() -> None:
         title += " — atenção"
 
     console.print(Panel(table, title=title, expand=False))
+
+
+# ─── audit (watchdog) ─────────────────────────────────────────────────────
+
+
+def _fmt_age(secs: int) -> str:
+    if secs < 60:
+        return f"{secs}s"
+    if secs < 3600:
+        return f"{secs // 60}m{secs % 60:02d}s"
+    return f"{secs // 3600}h{(secs % 3600) // 60:02d}m"
+
+
+@main.group()
+def audit() -> None:
+    """Watchdog: sessões em curso, travadas, kill operacional."""
+
+
+@audit.command("running")
+def audit_running() -> None:
+    """Lista sessões com turn em curso AGORA."""
+    sessions = load_all_sessions()
+    runs = running_sessions(sessions)
+    if not runs:
+        console.print("[dim]Nenhuma sessão em curso.[/dim]")
+        return
+
+    table = Table(title="Sessões em curso", show_header=True)
+    for col, justify in (
+        ("sid", "left"), ("agent", "left"), ("modelo", "left"),
+        ("cwd", "left"), ("turns", "right"), ("idade", "right"),
+        ("PID", "right"),
+    ):
+        table.add_column(col, justify=justify)
+
+    now = datetime.now(timezone.utc)
+    for s in runs:
+        info = read_lock(s.session_id)
+        pid_str = str(info.pid) if info else "?"
+        age_str = "?"
+        if info:
+            secs = int((now - info.started_at).total_seconds())
+            age_str = _fmt_age(secs)
+        table.add_row(
+            s.session_id[:8], s.agent_name or "?", s.model_id,
+            s.cwd or "—", str(len(s.turns)), age_str, pid_str,
+        )
+    console.print(table)
+
+
+@audit.command("stuck")
+@click.option("--threshold", default=600, type=int,
+              help="Limite em segundos (default 600 = 10m).")
+def audit_stuck(threshold: int) -> None:
+    """Lista running cuja idade ultrapassa o threshold."""
+    sessions = load_all_sessions()
+    stuck = stuck_sessions(sessions, threshold_secs=threshold)
+    if not stuck:
+        console.print(f"[green]Nenhuma sessão travada (threshold {threshold}s).[/green]")
+        return
+
+    table = Table(title=f"Travadas (>{threshold}s)", show_header=True)
+    for col in ("sid", "agent", "cwd", "idade", "PID"):
+        table.add_column(col)
+    now = datetime.now(timezone.utc)
+    for s, info in stuck:
+        age = int((now - info.started_at).total_seconds())
+        table.add_row(
+            s.session_id[:8], s.agent_name or "?",
+            s.cwd or "—", _fmt_age(age), str(info.pid),
+        )
+    console.print(table)
+
+
+@audit.command("kill")
+@click.argument("sid_prefix")
+@click.option("--all-stuck", is_flag=True, default=False,
+              help="Mata todas as sessões travadas (>threshold).")
+@click.option("--threshold", default=600, type=int,
+              help="Threshold para --all-stuck (default 600s).")
+@click.option("--yes", is_flag=True, default=False,
+              help="Não pergunta — força SIGTERM (use com --all-stuck).")
+def audit_kill(sid_prefix: str, all_stuck: bool, threshold: int, yes: bool) -> None:
+    """Mata sessão por prefixo de SID. Pergunta TERM/KILL/cancel."""
+    sessions = load_all_sessions()
+
+    if all_stuck:
+        stuck = stuck_sessions(sessions, threshold_secs=threshold)
+        if not stuck:
+            console.print(f"[green]Nenhuma travada > {threshold}s.[/green]")
+            return
+        console.print(f"[yellow]{len(stuck)} sessões serão terminadas:[/yellow]")
+        for s, info in stuck:
+            console.print(f"  - {s.session_id[:8]} (PID {info.pid})")
+        if not yes:
+            confirm = click.prompt(
+                "Confirma SIGTERM em todas? [y/N]", default="N",
+            ).strip().lower()
+            if confirm != "y":
+                console.print("[dim]Cancelado.[/dim]")
+                return
+        for s, info in stuck:
+            r = watchdog_kill_session(s.session_id, sig=_signal.SIGTERM)
+            _print_kill_result(r)
+        return
+
+    # Modo single — sid_prefix
+    matches = [s for s in sessions if s.session_id.startswith(sid_prefix)]
+    if not matches:
+        console.print(f"[red]Sem sessão com prefixo '{sid_prefix}'.[/red]")
+        raise SystemExit(1)
+    if len(matches) > 1:
+        console.print(f"[red]Prefixo ambíguo, casa {len(matches)} sessões.[/red]")
+        raise SystemExit(1)
+
+    s = matches[0]
+    info = read_lock(s.session_id)
+    if info is None:
+        console.print(f"[red]Sessão {s.session_id[:8]} não tem lockfile (não está ativa).[/red]")
+        raise SystemExit(1)
+
+    age_secs = int((datetime.now(timezone.utc) - info.started_at).total_seconds())
+
+    console.print(Panel(
+        f"[bold]{s.session_id}[/bold]\n"
+        f"agent: {s.agent_name}  modelo: {s.model_id}\n"
+        f"cwd: {s.cwd}\n"
+        f"PID: [bold]{info.pid}[/bold]  idade: {_fmt_age(age_secs)}\n"
+        f"último turn: {'em curso' if is_session_running(s) else 'finalizado'}",
+        title="Sessão", expand=False,
+    ))
+
+    console.print(
+        "\nComo terminar?\n"
+        "  [bold cyan]t[/bold cyan]erm    — SIGTERM (graceful)\n"
+        "  [bold red]k[/bold red]ill    — SIGKILL (forçado)\n"
+        "  [bold]c[/bold]ancel  — não fazer nada"
+    )
+    choice = click.prompt("> ", default="c").strip().lower()[:1]
+
+    if choice == "c":
+        console.print("[dim]Cancelado.[/dim]")
+        return
+
+    sig = _signal.SIGTERM if choice == "t" else _signal.SIGKILL if choice == "k" else None
+    if sig is None:
+        console.print(f"[red]Resposta inválida: '{choice}'. Use t/k/c.[/red]")
+        raise SystemExit(2)
+
+    r = watchdog_kill_session(s.session_id, sig=sig)
+    _print_kill_result(r)
+
+
+def _print_kill_result(r) -> None:
+    if r.ok:
+        console.print(f"[green]✓[/green] {r.sid[:8]} — {r.signal} enviado pra PID {r.pid}")
+    else:
+        console.print(f"[red]✗[/red] {r.sid[:8]} — falha: {r.error}")
+
+
+@audit.command("log")
+@click.argument("sid_prefix")
+@click.option("--tail", "tail_n", default=20, type=int, help="Últimas N tool calls (default 20).")
+def audit_log(sid_prefix: str, tail_n: int) -> None:
+    """Tool calls de uma sessão (lê o .jsonl)."""
+    paths = discover_sessions()
+    matches = [p for p in paths if p.stem.startswith(sid_prefix)]
+    if not matches:
+        console.print(f"[red]Sem sessão com prefixo '{sid_prefix}'.[/red]")
+        raise SystemExit(1)
+    if len(matches) > 1:
+        console.print(f"[red]Prefixo ambíguo ({len(matches)} sessões).[/red]")
+        raise SystemExit(1)
+
+    sid = matches[0].stem
+    jsonl = matches[0].with_suffix(".jsonl")
+    if not jsonl.exists():
+        console.print(f"[yellow]Sessão {sid[:8]} não tem .jsonl.[/yellow]")
+        return
+
+    tools = list(iter_tool_calls(jsonl))[-tail_n:]
+    if not tools:
+        console.print("[dim]Nenhum tool call registrado.[/dim]")
+        return
+
+    table = Table(title=f"Últimas {len(tools)} tool calls — {sid[:8]}", show_header=True)
+    for col in ("toolUseId", "tool", "status"):
+        table.add_column(col)
+    for t in tools:
+        status = t.status or "?"
+        style = "red" if status.lower() == "error" else "green" if status.lower() == "success" else "dim"
+        table.add_row(
+            t.tool_use_id[:8] if t.tool_use_id else "—",
+            t.name or "—",
+            f"[{style}]{status}[/{style}]",
+        )
+    console.print(table)
+
+
+@audit.command("watch")
+@click.option("--interval", default=2.0, type=float, help="Intervalo de refresh em segundos.")
+@click.option("--threshold", default=600, type=int)
+def audit_watch(interval: float, threshold: int) -> None:
+    """Monitor live: running + stuck atualizando a cada N segundos. Ctrl+C sai."""
+    try:
+        while True:
+            console.clear()
+            sessions = load_all_sessions()
+            runs = running_sessions(sessions)
+            stuck = stuck_sessions(sessions, threshold_secs=threshold)
+            console.print(
+                f"[dim]{datetime.now().astimezone().strftime('%H:%M:%S')}[/dim]  "
+                f"running=[bold]{len(runs)}[/bold]  "
+                f"stuck=[bold red]{len(stuck)}[/bold red]  "
+                f"[dim](Ctrl+C sai)[/dim]"
+            )
+            console.print()
+
+            if not runs:
+                console.print("[dim]Nenhuma sessão em curso.[/dim]")
+            else:
+                table = Table(show_header=True)
+                for col, justify in (
+                    ("sid", "left"), ("agent", "left"), ("modelo", "left"),
+                    ("cwd", "left"), ("turns", "right"), ("idade", "right"),
+                    ("PID", "right"),
+                ):
+                    table.add_column(col, justify=justify)
+                now = datetime.now(timezone.utc)
+                for s in runs:
+                    info = read_lock(s.session_id)
+                    pid_str = str(info.pid) if info else "?"
+                    age_str = "?"
+                    if info:
+                        secs = int((now - info.started_at).total_seconds())
+                        age_str = _fmt_age(secs)
+                    table.add_row(
+                        s.session_id[:8], s.agent_name or "?", s.model_id,
+                        s.cwd or "—", str(len(s.turns)), age_str, pid_str,
+                    )
+                console.print(table)
+
+            if stuck:
+                console.print()
+                console.print(f"[red bold]⚠️ {len(stuck)} travada(s) > {threshold}s[/red bold]")
+                for s, info in stuck:
+                    age = int((datetime.now(timezone.utc) - info.started_at).total_seconds())
+                    console.print(f"  - [red]{s.session_id[:8]}[/red] PID {info.pid} idade {_fmt_age(age)}")
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        console.print("\n[dim]Encerrado.[/dim]")
 
 
 # ─── tui ──────────────────────────────────────────────────────────────────
