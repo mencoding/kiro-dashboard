@@ -346,6 +346,27 @@ Hoje e ontem **não** viram snapshot persistido pelo lazy — sempre
 re-lidos dos arquivos `~/.kiro/sessions/cli/*.json` originais. Snapshot
 só fecha em **D-2 ou anterior**.
 
+### Queries históricas
+
+```bash
+kiro-dash today --day 2026-05-16        # snapshot ou live (D, D-1)
+kiro-dash month                         # mês corrente
+kiro-dash month 2026-05
+kiro-dash year                          # ano corrente
+kiro-dash year 2026
+
+kiro-dash compare today yesterday
+kiro-dash compare week last-week
+kiro-dash compare 2026-05 2026-04
+kiro-dash compare 2026 2025
+```
+
+Comandos `month`/`year`/`compare` agregam snapshots diários sob demanda.
+Sem cache mensal — fonte única de verdade são os snapshots de dia.
+
+Ranges sem snapshot (dias antes da instalação ou da primeira execução)
+mostram zero. Use `kiro-dash snapshot` pra gerar manualmente.
+
 ## Notas técnicas
 
 ### Clock injetável

@@ -216,6 +216,41 @@ def whoami() -> None:
     console.print(Panel(table, title=title, expand=False))
 
 
+def _render_snapshot(snap: dict, *, agent: str | None = None) -> None:
+    """Renderiza snapshot JSON no mesmo formato visual do today."""
+    totals = snap["totals"]
+    d = snap["local_date"]
+
+    header = Text()
+    header.append(f"{d}  ", style="bold")
+    header.append(f"{_fmt_credits(totals['credits'])} créditos  ", style="bold green")
+    header.append(f"{totals['turns']} turns em {totals['sessions']} sessões")
+    header.append("  [snapshot]", style="dim")
+    console.print(Panel(header, title="Histórico", expand=False))
+    console.print()
+
+    if snap.get("by_model"):
+        table = Table(title="Por modelo", expand=False, header_style="bold")
+        for col in ("modelo", "créditos", "turns", "sessões", "duração", "tools"):
+            table.add_column(col, justify="right" if col != "modelo" else "left")
+        for m in snap["by_model"]:
+            table.add_row(
+                m["label"], _fmt_credits(m["credits"]), str(m["turns"]),
+                str(m["sessions"]), _fmt_duration(timedelta(seconds=m.get("duration_secs", 0))),
+                str(m.get("tool_uses", 0)),
+            )
+        console.print(table)
+
+    if snap.get("by_project"):
+        table = Table(title="Por projeto", expand=False, header_style="bold")
+        for col in ("projeto", "créditos", "turns", "sessões"):
+            table.add_column(col, justify="right" if col != "projeto" else "left")
+        for p in snap["by_project"]:
+            table.add_row(p["label"], _fmt_credits(p["credits"]),
+                          str(p["turns"]), str(p["sessions"]))
+        console.print(table)
+
+
 # ─── today ───────────────────────────────────────────────────────────────
 
 
@@ -231,7 +266,22 @@ def today(day_str: str | None, agent: str | None) -> None:
     """Agregado de créditos do dia corrente."""
     _ensure_snapshots_silently()
     d = date.fromisoformat(day_str) if day_str else datetime.now().astimezone().date()
+    today_local = datetime.now().astimezone().date()
 
+    # D-2 e anterior: lê snapshot
+    if d <= today_local - timedelta(days=2):
+        from kiro_dash.snapshots import read_snapshot
+
+        snap = read_snapshot(d)
+        if snap is None:
+            console.print(
+                f"[yellow]Sem snapshot para {d}. Tente: kiro-dash snapshot {d}[/yellow]"
+            )
+            return
+        _render_snapshot(snap, agent=agent)
+        return
+
+    # D ou D-1: path stateless (live)
     sessions = load_all_sessions()
     pairs = filter_by_agent(turns_in_local_day(sessions, d), agent)
 
@@ -264,6 +314,128 @@ def today(day_str: str | None, agent: str | None) -> None:
     aliases = load_aliases(default_config_path())
     console.print(_aggregates_table("Por projeto", aggregate_by_project(pairs, aliases=aliases), "projeto"))
     console.print(_aggregates_table("Por sessão", aggregate_by_session(pairs), "sessão", show_sessions=False))
+
+
+# ─── month / year ────────────────────────────────────────────────────────
+
+
+def _render_period_summary(s) -> None:
+    """Header + breakdowns do PeriodSummary."""
+    if s.days_with_data == 0:
+        console.print(f"[yellow]Sem snapshots no período {s.period_label}.[/yellow]")
+        return
+    header = Text()
+    header.append(f"{s.period_label}  ", style="bold")
+    header.append(f"{_fmt_credits(s.credits)} créditos  ", style="bold green")
+    header.append(f"{s.turns} turns / {s.sessions} sessões  ")
+    header.append(f"({s.days_with_data} dias com dados)", style="dim")
+    console.print(Panel(header, title="Resumo", expand=False))
+
+    if s.by_model:
+        t = Table(title="Por modelo", expand=False, header_style="bold")
+        for col in ("modelo", "créditos", "turns", "sessões"):
+            t.add_column(col, justify="right" if col != "modelo" else "left")
+        for m in s.by_model:
+            t.add_row(m["label"], _fmt_credits(m["credits"]),
+                      str(m["turns"]), str(m["sessions"]))
+        console.print(t)
+
+    if s.by_project:
+        t = Table(title="Por projeto", expand=False, header_style="bold")
+        for col in ("projeto", "créditos", "turns", "sessões"):
+            t.add_column(col, justify="right" if col != "projeto" else "left")
+        for p in s.by_project:
+            t.add_row(p["label"], _fmt_credits(p["credits"]),
+                      str(p["turns"]), str(p["sessions"]))
+        console.print(t)
+
+
+@main.command()
+@click.argument("month_str", required=False)
+def month(month_str: str | None) -> None:
+    """Resumo mensal de uso (lê snapshots). Formato: YYYY-MM."""
+    from kiro_dash.history import month_summary
+
+    if month_str is None:
+        t = datetime.now().astimezone().date()
+        year, m = t.year, t.month
+    else:
+        try:
+            year, m = map(int, month_str.split("-"))
+        except (ValueError, AttributeError):
+            console.print(f"[red]Formato inválido: '{month_str}'. Use YYYY-MM.[/red]")
+            raise SystemExit(2)
+        if not (1 <= m <= 12):
+            console.print(f"[red]Mês inválido: {m}.[/red]")
+            raise SystemExit(2)
+
+    summary = month_summary(year, m)
+    _render_period_summary(summary)
+
+
+@main.command()
+@click.argument("year_str", required=False)
+def year(year_str: str | None) -> None:
+    """Resumo anual de uso (lê snapshots). Formato: YYYY."""
+    from kiro_dash.history import year_summary
+
+    if year_str is None:
+        y = datetime.now().astimezone().year
+    else:
+        try:
+            y = int(year_str)
+        except ValueError:
+            console.print(f"[red]Ano inválido: '{year_str}'.[/red]")
+            raise SystemExit(2)
+
+    summary = year_summary(y)
+    _render_period_summary(summary)
+
+
+# ─── compare ─────────────────────────────────────────────────────────────
+
+
+@main.command()
+@click.argument("a_str")
+@click.argument("b_str")
+def compare(a_str: str, b_str: str) -> None:
+    """Compara dois períodos. Aceita YYYY, YYYY-MM, today/yesterday/week/last-week/month/last-month/year/last-year."""
+    from kiro_dash.history import diff_summaries, resolve_period
+
+    a = resolve_period(a_str)
+    b = resolve_period(b_str)
+    if a is None or b is None:
+        console.print(
+            "[red]Período inválido. Use YYYY, YYYY-MM, "
+            "today/yesterday/week/last-week/month/last-month/year/last-year.[/red]"
+        )
+        raise SystemExit(2)
+
+    diff = diff_summaries(a, b)
+    table = Table(
+        title=f"{a.period_label} vs {b.period_label}",
+        expand=False, header_style="bold",
+    )
+    table.add_column("métrica")
+    table.add_column(a.period_label, justify="right")
+    table.add_column(b.period_label, justify="right")
+    table.add_column("Δ", justify="right")
+    table.add_column("%", justify="right")
+
+    for name, fa, fb, fd in [
+        ("créditos", a.credits, b.credits, diff["credits_delta"]),
+        ("turns", a.turns, b.turns, diff["turns_delta"]),
+        ("sessões", a.sessions, b.sessions, diff["sessions_delta"]),
+    ]:
+        pct_str = f"{(fd / fb) * 100:+.1f}%" if fb else "—"
+        delta_style = "green" if fd >= 0 else "red"
+        table.add_row(
+            name, _fmt_credits(fa) if isinstance(fa, float) else str(fa),
+            _fmt_credits(fb) if isinstance(fb, float) else str(fb),
+            Text(f"{fd:+.2f}" if isinstance(fd, float) else f"{fd:+}", style=delta_style),
+            pct_str,
+        )
+    console.print(table)
 
 
 # ─── session ─────────────────────────────────────────────────────────────
