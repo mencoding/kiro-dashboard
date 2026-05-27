@@ -108,7 +108,7 @@ def diff_summaries(a: PeriodSummary, b: PeriodSummary) -> dict[str, Any]:
     }
 
 
-def _live_day_as_period(d: date, *, label: str) -> PeriodSummary:
+def live_day_as_period(d: date, *, label: str) -> PeriodSummary:
     """Constrói PeriodSummary lendo turns live de um dia (D ou D-1)."""
     from kiro_dash.aggregator import total_credits, turns_in_local_day
     from kiro_dash.parser import load_all_sessions
@@ -124,7 +124,7 @@ def _live_day_as_period(d: date, *, label: str) -> PeriodSummary:
     )
 
 
-def _live_window_as_period(
+def live_window_as_period(
     start_day: date, *, days: int, label: str,
 ) -> PeriodSummary:
     """PeriodSummary acumulado em janela contígua (live se hoje/ontem; snapshot caso contrário)."""
@@ -175,15 +175,15 @@ def resolve_period(s: str) -> PeriodSummary | None:
     today = datetime.now().astimezone().date()
 
     if s == "today":
-        return _live_day_as_period(today, label="hoje")
+        return live_day_as_period(today, label="hoje")
     if s == "yesterday":
-        return _live_day_as_period(today - timedelta(days=1), label="ontem")
+        return live_day_as_period(today - timedelta(days=1), label="ontem")
     if s == "week":
         start = today - timedelta(days=6)
-        return _live_window_as_period(start, days=7, label="última semana")
+        return live_window_as_period(start, days=7, label="última semana")
     if s == "last-week":
         start = today - timedelta(days=13)
-        return _live_window_as_period(start, days=7, label="semana anterior")
+        return live_window_as_period(start, days=7, label="semana anterior")
     if s == "month":
         return month_summary(today.year, today.month)
     if s == "last-month":

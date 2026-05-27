@@ -6,6 +6,7 @@ from textual.binding import Binding
 from textual.widgets import Footer, Header, TabbedContent, TabPane
 
 from kiro_dash import __version__
+from kiro_dash.views.tabs.history_tab import HistoryTab
 from kiro_dash.views.tabs.models_tab import ModelsTab
 from kiro_dash.views.tabs.now_tab import NowTab
 from kiro_dash.views.tabs.projects_tab import ProjectsTab
@@ -27,6 +28,7 @@ class KiroDashApp(App):
         Binding("4", "show_tab('models')", "Models"),
         Binding("5", "show_tab('tools')", "Tools"),
         Binding("6", "show_tab('session')", "Session"),
+        Binding("7", "show_tab('history')", "History"),
         Binding("r", "refresh_active", "Refresh"),
         Binding("q", "quit", "Sair"),
         Binding("question_mark", "help", "Ajuda"),
@@ -47,6 +49,8 @@ class KiroDashApp(App):
                 yield ToolsTab()
             with TabPane("Session", id="session"):
                 yield SessionTab()
+            with TabPane("History", id="history"):
+                yield HistoryTab()
         yield Footer()
 
     def action_show_tab(self, tab_id: str) -> None:
@@ -61,7 +65,7 @@ class KiroDashApp(App):
 
     def action_help(self) -> None:
         self.notify(
-            "Atalhos: 1-6 trocar aba; r refresh; q sair",
+            "Atalhos: 1-7 trocar aba; r refresh; q sair",
             title="Ajuda",
             timeout=5,
         )

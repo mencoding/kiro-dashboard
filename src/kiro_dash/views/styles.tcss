@@ -40,3 +40,27 @@ TodayTab DataTable {
 .danger {
     color: $error;
 }
+
+HistoryTab Static {
+    width: 100%;
+    margin: 0 1;
+    padding: 0 1;
+}
+
+#history-spark30, #history-spark12m {
+    height: auto;
+    margin-bottom: 1;
+}
+
+#history-compare-row1, #history-compare-row2 {
+    height: auto;
+    margin: 0 1;
+}
+
+.cmp-card {
+    width: 1fr;
+    height: 7;
+    margin: 0 1;
+    padding: 0 1;
+    border: round $primary;
+}
