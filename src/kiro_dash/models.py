@@ -13,6 +13,14 @@ from typing import Iterable
 
 
 @dataclass(frozen=True, slots=True)
+class LockInfo:
+    """Conteúdo do .lock de uma sessão Kiro."""
+
+    pid: int
+    started_at: datetime  # UTC
+
+
+@dataclass(frozen=True, slots=True)
 class Turn:
     """Um user-turn de uma sessão do Kiro CLI.
 
@@ -43,7 +51,7 @@ class Turn:
         Créditos faturados no turno (soma de ``metering_usage[].value``).
     """
 
-    end_timestamp: datetime
+    end_timestamp: datetime | None
     agent_name: str
     parent_agent_id: str | None
     duration: timedelta
@@ -130,4 +138,4 @@ class Session:
 
     def turns_in(self, start: datetime, end: datetime) -> Iterable[Turn]:
         """Itera turns cujo ``end_timestamp`` cai em ``[start, end)``."""
-        return (t for t in self.turns if start <= t.end_timestamp < end)
+        return (t for t in self.turns if t.end_timestamp is not None and start <= t.end_timestamp < end)
