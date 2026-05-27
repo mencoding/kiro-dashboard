@@ -8,6 +8,7 @@ Subcomandos:
 """
 from __future__ import annotations
 
+import signal as _signal
 import time
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -51,6 +52,7 @@ from kiro_dash.parser import (
     find_session_by_prefix,
     load_all_sessions,
     load_session_file,
+    read_lock,
 )
 from kiro_dash.sync import (
     SyncConfig,
@@ -58,6 +60,12 @@ from kiro_dash.sync import (
     rclone_remote_exists,
     sync_pull,
     sync_push,
+)
+from kiro_dash.watchdog import (
+    is_session_running,
+    kill_session as watchdog_kill_session,
+    running_sessions,
+    stuck_sessions,
 )
 
 console = Console()
@@ -690,6 +698,78 @@ def balance() -> None:
         title += " — atenção"
 
     console.print(Panel(table, title=title, expand=False))
+
+
+# ─── audit (watchdog) ─────────────────────────────────────────────────────
+
+
+def _fmt_age(secs: int) -> str:
+    if secs < 60:
+        return f"{secs}s"
+    if secs < 3600:
+        return f"{secs // 60}m{secs % 60:02d}s"
+    return f"{secs // 3600}h{(secs % 3600) // 60:02d}m"
+
+
+@main.group()
+def audit() -> None:
+    """Watchdog: sessões em curso, travadas, kill operacional."""
+
+
+@audit.command("running")
+def audit_running() -> None:
+    """Lista sessões com turn em curso AGORA."""
+    sessions = load_all_sessions()
+    runs = running_sessions(sessions)
+    if not runs:
+        console.print("[dim]Nenhuma sessão em curso.[/dim]")
+        return
+
+    table = Table(title="Sessões em curso", show_header=True)
+    for col, justify in (
+        ("sid", "left"), ("agent", "left"), ("modelo", "left"),
+        ("cwd", "left"), ("turns", "right"), ("idade", "right"),
+        ("PID", "right"),
+    ):
+        table.add_column(col, justify=justify)
+
+    now = datetime.now(timezone.utc)
+    for s in runs:
+        info = read_lock(s.session_id)
+        pid_str = str(info.pid) if info else "?"
+        age_str = "?"
+        if info:
+            secs = int((now - info.started_at).total_seconds())
+            age_str = _fmt_age(secs)
+        table.add_row(
+            s.session_id[:8], s.agent_name or "?", s.model_id,
+            s.cwd or "—", str(len(s.turns)), age_str, pid_str,
+        )
+    console.print(table)
+
+
+@audit.command("stuck")
+@click.option("--threshold", default=600, type=int,
+              help="Limite em segundos (default 600 = 10m).")
+def audit_stuck(threshold: int) -> None:
+    """Lista running cuja idade ultrapassa o threshold."""
+    sessions = load_all_sessions()
+    stuck = stuck_sessions(sessions, threshold_secs=threshold)
+    if not stuck:
+        console.print(f"[green]Nenhuma sessão travada (threshold {threshold}s).[/green]")
+        return
+
+    table = Table(title=f"Travadas (>{threshold}s)", show_header=True)
+    for col in ("sid", "agent", "cwd", "idade", "PID"):
+        table.add_column(col)
+    now = datetime.now(timezone.utc)
+    for s, info in stuck:
+        age = int((now - info.started_at).total_seconds())
+        table.add_row(
+            s.session_id[:8], s.agent_name or "?",
+            s.cwd or "—", _fmt_age(age), str(info.pid),
+        )
+    console.print(table)
 
 
 # ─── tui ──────────────────────────────────────────────────────────────────
