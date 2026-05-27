@@ -112,3 +112,30 @@ def test_active_session_bypasses_cache(tmp_path, isolated_cache):
     with patch.object(Path, "open", tracking_open):
         load_session_file(p)
         assert len(opens_of_source) == 1  # active session always re-reads
+
+
+def test_jsonl_parser_uses_cache(tmp_path, isolated_cache):
+    from kiro_dash.jsonl_parser import iter_tool_calls
+
+    p = tmp_path / "x.jsonl"
+    payload = (
+        '{"kind":"AssistantMessage","data":{"content":[{"kind":"toolUse","data":{"name":"read","toolUseId":"abc","input":{}}}]}}\n'
+    )
+    p.write_text(payload)
+
+    out1 = list(iter_tool_calls(p))
+    assert len(out1) == 1
+
+    original_open = Path.open
+    opens_of_source = []
+
+    def tracking_open(self, *args, **kwargs):
+        if self == p:
+            opens_of_source.append(self)
+        return original_open(self, *args, **kwargs)
+
+    with patch.object(Path, "open", tracking_open):
+        out2 = list(iter_tool_calls(p))
+        assert len(out2) == 1
+        assert out2[0].name == out1[0].name
+        assert opens_of_source == []  # cache hit, no file open
