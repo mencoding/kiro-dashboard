@@ -23,10 +23,26 @@ class ToolCall:
     session_id: str
 
 
+from kiro_dash.cache import jsonl_cache
+
+
 def iter_tool_calls(path: Path) -> Iterator[ToolCall]:
-    """Itera ``ToolCall`` extraídos do transcript em ``path``."""
+    """Itera ``ToolCall`` extraídos do transcript em ``path``.
+
+    Cache mtime-based. Sessões com ``.lock`` bypassam cache.
+    """
     if not path.is_file():
         return
+
+    lock = path.with_suffix(".lock")
+    is_active = lock.exists()
+
+    if not is_active:
+        cached = jsonl_cache().get(path)
+        if cached is not None:
+            for c in cached:
+                yield ToolCall(**c)
+            return
 
     session_id = path.stem
     tool_uses: list[tuple[str, str]] = []
@@ -68,10 +84,20 @@ def iter_tool_calls(path: Path) -> Iterator[ToolCall]:
     except OSError:
         return
 
-    for name, tu_id in tool_uses:
-        yield ToolCall(
+    results = [
+        ToolCall(
             name=name,
             tool_use_id=tu_id,
             status=statuses.get(tu_id, "unknown"),
             session_id=session_id,
         )
+        for name, tu_id in tool_uses
+    ]
+
+    if not is_active:
+        jsonl_cache().put(
+            path,
+            [{"name": t.name, "tool_use_id": t.tool_use_id, "status": t.status, "session_id": t.session_id} for t in results],
+        )
+
+    yield from results

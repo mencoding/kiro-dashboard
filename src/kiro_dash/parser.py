@@ -18,6 +18,7 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from kiro_dash.cache import sessions_cache
 from kiro_dash.models import Session, Turn
 
 DEFAULT_SESSIONS_DIR = Path.home() / ".kiro" / "sessions" / "cli"
@@ -152,22 +153,108 @@ def parse_session(raw: dict, *, is_active: bool = False) -> Session | None:
     )
 
 
+def _session_to_payload(session: Session) -> dict:
+    """Converte Session para dict serializável (round-trip cache)."""
+    return {
+        "session_id": session.session_id,
+        "title": session.title,
+        "agent_name": session.agent_name,
+        "model_id": session.model_id,
+        "rate_multiplier": session.rate_multiplier,
+        "context_window_tokens": session.context_window_tokens,
+        "cwd": session.cwd,
+        "created_at": session.created_at.isoformat(),
+        "updated_at": session.updated_at.isoformat(),
+        "version": session.version,
+        "session_created_reason": session.session_created_reason,
+        "is_active": session.is_active,
+        "turns": [
+            {
+                "end_timestamp": t.end_timestamp.isoformat(),
+                "agent_name": t.agent_name,
+                "parent_agent_id": t.parent_agent_id,
+                "duration_secs": t.duration.total_seconds(),
+                "end_reason": t.end_reason,
+                "builtin_tool_uses": t.builtin_tool_uses,
+                "number_of_cycles": t.number_of_cycles,
+                "context_usage_pct": t.context_usage_pct,
+                "credits": t.credits,
+            }
+            for t in session.turns
+        ],
+    }
+
+
+def _session_from_payload(payload: dict) -> Session:
+    """Reconstrói Session a partir do dict do cache."""
+    from datetime import timedelta
+
+    turns = [
+        Turn(
+            end_timestamp=datetime.fromisoformat(t["end_timestamp"]),
+            agent_name=t["agent_name"],
+            parent_agent_id=t.get("parent_agent_id"),
+            duration=timedelta(seconds=t["duration_secs"]),
+            end_reason=t["end_reason"],
+            builtin_tool_uses=t["builtin_tool_uses"],
+            number_of_cycles=t["number_of_cycles"],
+            context_usage_pct=t["context_usage_pct"],
+            credits=t["credits"],
+        )
+        for t in payload["turns"]
+    ]
+    return Session(
+        session_id=payload["session_id"],
+        title=payload["title"],
+        agent_name=payload["agent_name"],
+        model_id=payload["model_id"],
+        rate_multiplier=payload["rate_multiplier"],
+        context_window_tokens=payload["context_window_tokens"],
+        cwd=payload["cwd"],
+        created_at=datetime.fromisoformat(payload["created_at"]),
+        updated_at=datetime.fromisoformat(payload["updated_at"]),
+        version=payload["version"],
+        session_created_reason=payload.get("session_created_reason"),
+        is_active=payload["is_active"],
+        turns=turns,
+    )
+
+
+def _parse_session_data(data: dict, path: Path) -> Session | None:
+    """Parseia dados JSON já carregados em Session (ou None se inválido)."""
+    lock_path = path.with_suffix(".lock")
+    is_active = lock_path.exists()
+    return parse_session(data, is_active=is_active)
+
+
 def load_session_file(path: Path) -> Session | None:
     """Carrega e parseia um ``<sid>.json`` do disco.
 
-    ``is_active`` é determinado pela presença de ``<sid>.lock`` no mesmo
-    diretório.
+    Cache mtime-based em ``~/.cache/kiro-dash/sessions/``. Sessões com
+    ``.lock`` correspondente (ativas) bypassam o cache.
     """
+    lock_path = path.with_suffix(".lock")
+    is_active = lock_path.exists()
+
+    if not is_active:
+        cached = sessions_cache().get(path)
+        if cached is not None:
+            try:
+                return _session_from_payload(cached)
+            except (KeyError, ValueError, TypeError):
+                pass
+
     try:
         with path.open(encoding="utf-8") as f:
             raw = json.load(f)
     except (OSError, json.JSONDecodeError):
         return None
 
-    lock_path = path.with_suffix(".lock")
-    is_active = lock_path.exists()
+    session = parse_session(raw, is_active=is_active)
+    if session is not None and not is_active:
+        sessions_cache().put(path, _session_to_payload(session))
 
-    return parse_session(raw, is_active=is_active)
+    return session
 
 
 def discover_sessions(sessions_dir: Path | None = None) -> list[Path]:
