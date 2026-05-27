@@ -194,8 +194,35 @@ O `kiro-dash` consolida sessões em "projetos conceituais" mapeando o
 | Outros sob `~` | path relativo ao home |
 | Fora do home | path literal |
 
-Override declarativo (`config.toml` com aliases custom) está planejado
-para Wave 3.
+Override declarativo (`config.toml` com aliases custom) está disponível —
+ver seção abaixo.
+
+## Aliases de projeto (override declarativo)
+
+Aliases têm prioridade sobre a heurística. Match por prefixo: o mais
+específico vence.
+
+```bash
+kiro-dash aliases set /srv/work/clientes/acme acme
+kiro-dash aliases set /home/foo/lab experimentos
+kiro-dash aliases get
+kiro-dash aliases unset /srv/work/clientes/acme
+```
+
+Persistido em `~/.config/kiro-dash/config.toml` na seção
+`[project_aliases]`.
+
+## Filtro por agent
+
+```bash
+kiro-dash today --agent nyx
+kiro-dash projects --agent kiro_default --window cycle
+kiro-dash models --agent nyx --window month
+kiro-dash recent --agent nyx
+```
+
+`--agent <name>` isola a atividade de um agent específico (comparação
+por igualdade exata em `session.agent_name`).
 
 ## Filtros temporais
 
