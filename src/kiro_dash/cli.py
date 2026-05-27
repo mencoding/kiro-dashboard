@@ -695,6 +695,37 @@ def balance() -> None:
 # ─── tui ──────────────────────────────────────────────────────────────────
 
 
+@main.group()
+def cache() -> None:
+    """Inspeção e limpeza do cache do parser."""
+
+
+@cache.command("info")
+def cache_info_cmd() -> None:
+    """Mostra estatísticas do cache."""
+    from kiro_dash.cache import cache_info as _cache_info, cache_dir_default
+
+    info = _cache_info()
+    table = Table(title="Cache", show_header=True)
+    table.add_column("namespace")
+    table.add_column("entries", justify="right")
+    table.add_column("bytes", justify="right")
+    for ns, stats in info.items():
+        table.add_row(ns, str(stats["entries"]), str(stats["bytes"]))
+    table.add_row("[dim]root[/dim]", "", str(cache_dir_default()))
+    console.print(table)
+
+
+@cache.command("clear")
+def cache_clear_cmd() -> None:
+    """Remove todas as entradas do cache."""
+    from kiro_dash.cache import clear_cache
+
+    out = clear_cache()
+    total = sum(out.values())
+    console.print(f"[green]Cache limpo:[/green] {total} entradas removidas {out}")
+
+
 @main.command()
 def tui() -> None:
     """Lança a TUI interativa (6 abas: now/today/projects/models/tools/session)."""
