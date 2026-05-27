@@ -1,206 +1,269 @@
 # kiro-dashboard
 
+[![Version](https://img.shields.io/badge/version-0.6.1-blue)](https://github.com/mencoding/kiro-dashboard/releases)
+[![Python](https://img.shields.io/badge/python-3.12+-blue)](https://www.python.org)
+[![License](https://img.shields.io/badge/license-Proprietary-red)](#licença)
+
 Painel local de uso e créditos do **Kiro CLI** (ex-Amazon Q Developer CLI).
 Lê as sessões gravadas em `~/.kiro/sessions/cli/` e expõe consumo
-agregado, drill-down por sessão, e visão "tempo real" das sessões
-ativas.
-
-## Motivação
-
-O Kiro CLI cobra por **créditos** (não tokens) e não expõe via CLI
-nativa uma visão transversal de quanto cada sessão consumiu, qual
-modelo usou, em qual projeto, com qual agent. Esses dados existem em
-`~/.kiro/sessions/cli/<sid>.json`, no campo
-`session_state.conversation_metadata.user_turn_metadatas[].metering_usage[]`
-— este projeto consolida tudo num único painel local.
+agregado, drill-down por sessão/tool, watchdog de processos travados,
+histórico persistido e visão "tempo real" em TUI ou MCP.
 
 Inspirado no [`claude-dashboard`](https://github.com/mencoding/claude-dashboard).
 
-## Princípio de privacidade
+---
+
+## Sumário
+
+- [Motivação](#motivação)
+- [Privacidade](#privacidade)
+- [Instalação](#instalação)
+- [Início rápido](#início-rápido)
+- [Comandos](#comandos)
+  - [Identidade e conta](#identidade-e-conta)
+  - [Visão imediata](#visão-imediata)
+  - [Janelas e drill-downs](#janelas-e-drill-downs)
+  - [Plano e saldo](#plano-e-saldo)
+  - [Histórico](#histórico)
+  - [Watchdog operacional](#watchdog-operacional-audit)
+  - [Sync multi-device](#sync-multi-device)
+  - [Cache, aliases, configuração](#cache-aliases-configuração)
+- [TUI interativa](#tui-interativa)
+- [Heurística de projetos](#heurística-de-projetos)
+- [Servidor MCP](#servidor-mcp)
+- [Stack e arquitetura](#stack-e-arquitetura)
+- [Licença](#licença)
+
+---
+
+## Motivação
+
+O Kiro CLI cobra por **créditos** (não tokens) e não expõe via CLI nativa
+uma visão transversal de quanto cada sessão consumiu, qual modelo usou,
+em qual projeto, com qual agent. Esses dados existem em
+`~/.kiro/sessions/cli/<sid>.json`, no campo
+`session_state.conversation_metadata.user_turn_metadatas[].metering_usage[]`.
+Este projeto consolida tudo num único painel local — CLI, TUI ou MCP.
+
+## Privacidade
 
 O parser é **deliberadamente cego para o conteúdo de mensagens**. Lê
-apenas metadata estrutural: créditos, modelo, agent, projeto (cwd),
-timestamps, ferramentas (count), % de contexto. Prompts e respostas
-do usuário/assistente nunca entram no índice.
+apenas metadata estrutural:
 
-## Uso (planejado)
+- créditos, modelo, agent, projeto (cwd), timestamps
+- nomes de tool calls, status (success/error), `error_summary` (1ª linha
+  do retorno em caso de erro — sem prompts)
+- `input_keys` das tools (apenas nomes dos parâmetros, sem values)
 
-```bash
-kiro-dash whoami         # conta, organização, profile, billing tier
-kiro-dash now            # live view das sessões ativas
-kiro-dash today          # agregado do dia
-kiro-dash session <sid>  # drill-down (prefixo de sessionId aceito)
-kiro-dash projects       # top projetos por créditos
-kiro-dash models         # top modelos
-```
+Prompts e respostas do usuário/assistente **nunca** entram no índice,
+cache, snapshots ou MCP. O sync via rclone (opcional) inclui apenas
+`.json` (metadata); `.jsonl` (transcripts) **nunca** sai do dispositivo.
 
-## Instalação (planejado)
+---
+
+## Instalação
 
 ```bash
-pipx install ~/Desenvolvimento/mencoding/kiro-dash
+pipx install git+https://github.com/mencoding/kiro-dashboard.git
 ```
 
-## Status
-
-**v0.1.0** — em construção. Roadmap em `ROADMAP.md` (a criar).
-
-## Stack
-
-- Python 3.12
-- [`rich`](https://rich.readthedocs.io) — output e Live view
-- [`click`](https://click.palletsprojects.com) — CLI
-- Parsing nativo de JSON (sem dependência externa)
-
-## MCP server — canal para outros agentes
-
-A partir da v0.2 o `kiro-dash-mcp` expõe o estado do Kiro CLI como
-ferramentas consultáveis via Model Context Protocol. Útil para agentes
-fazerem meta-raciocínio sobre o próprio uso de créditos.
-
-Registrar no Kiro CLI (assumindo que `kiro-dash-mcp` está no `PATH`):
-
-```json
-// Em mcpServers do agent config:
-"kiro-dash": {
-  "command": "kiro-dash-mcp"
-}
-```
-
-Tools expostas:
-
-| Tool | Retorna |
-|---|---|
-| `today_summary` | Agregado do dia local |
-| `active_sessions` | Sessões com lockfile no momento |
-| `session_details(session_id_prefix)` | Drill-down (estrutural; sem conteúdo) |
-| `account_info` | Conta, profile ARN, billing tier |
-| `top_projects(days, limit)` | Top projetos por créditos |
-| `top_models(days, limit)` | Top modelos por créditos |
-
-**Privacidade:** nenhuma tool expõe conteúdo de mensagens — apenas
-metadata estrutural (mesma superfície da CLI).
-
-## Sync multi-device (Google Drive via rclone)
-
-Sincroniza apenas os `.json` de `~/.kiro/sessions/cli/` entre dispositivos —
-o painel de uma máquina passa a ver sessões da outra. **Não inclui** os
-`.jsonl` (transcripts com prompts/respostas; ficam locais).
-
-### Pré-requisitos
-
-- `rclone` instalado e remote `gdrive-pessoal` configurado (mesmo padrão do
-  `iris/sync-drive.sh`):
-  ```bash
-  sudo apt install rclone
-  rclone config   # criar remote tipo 'drive', nome 'gdrive-pessoal'
-  ```
-
-### Uso manual
+Ou versão fixa:
 
 ```bash
-kiro-dash sync push   # local → Drive
-kiro-dash sync pull   # Drive → local
+pipx install git+https://github.com/mencoding/kiro-dashboard.git@v0.6.1
 ```
 
-### Uso automatizado (hook do agent Nyx)
+3 binários globais ficam disponíveis:
 
-No `~/.kiro/agents/nyx.json`, em `hooks.agentSpawn`:
+- `kiro-dash` — CLI principal e TUI
+- `kiro-dash-mcp` — servidor MCP (stdio)
+- `kiro-dash-sync` — alias do `kiro-dash sync`
 
-```json
-"agentSpawn": [
-  { "command": "kiro-dash sync pull --remote gdrive-pessoal", "timeout_ms": 30000 }
-]
-```
+**Pré-requisitos:**
 
-E em `hooks.stop`:
+- Python 3.12+
+- Kiro CLI já em uso (com sessões em `~/.kiro/sessions/cli/`)
+- Para sync opcional: `rclone` configurado
 
-```json
-"stop": [
-  { "command": "kiro-dash sync push --remote gdrive-pessoal", "timeout_ms": 30000 }
-]
-```
-
-### Privacidade
-
-- Apenas `.json` é syncado (metadata + título de sessão; sem conteúdo de mensagens)
-- `.jsonl` (transcripts) **NÃO** sai do dispositivo
-- `.lock` (estado local) **NÃO** sai do dispositivo
-
-## Plano e saldo estimado
-
-Declare seu plano para que o painel mostre saldo restante do ciclo:
+## Início rápido
 
 ```bash
-kiro-dash plan set pro+              # 2000 créditos/mês (default da tier)
-kiro-dash plan set pro --credits 1500 --cycle-start 2026-05-15  # overrides
+# Identidade
+kiro-dash whoami
+
+# Hoje
+kiro-dash today
+
+# TUI completa
+kiro-dash tui
+
+# Plano + saldo do ciclo
+kiro-dash plan set pro+
+kiro-dash balance
+
+# Histórico
+kiro-dash month             # mês corrente
+kiro-dash compare today yesterday
+```
+
+---
+
+## Comandos
+
+### Identidade e conta
+
+```bash
+kiro-dash whoami            # conta AWS, profile, billing tier
+```
+
+### Visão imediata
+
+```bash
+kiro-dash now               # sessões ativas (com lockfile presente)
+kiro-dash today             # agregado do dia local
+kiro-dash today --day 2026-05-16   # dia específico (lê snapshot se < D-2)
+kiro-dash recent            # últimas N sessões
+kiro-dash session <sid>     # drill-down (prefixo aceito)
+```
+
+### Janelas e drill-downs
+
+```bash
+kiro-dash projects                  # top projetos (default: últimos 7d)
+kiro-dash models                    # top modelos
+kiro-dash tools                     # tool calls últimas 24h (com bar visual)
+
+# Filtros temporais (--window):
+kiro-dash projects --window today
+kiro-dash projects --window week    # default
+kiro-dash projects --window month
+kiro-dash projects --window cycle   # desde cycle_start do plano
+kiro-dash projects --window all
+kiro-dash projects --window 14      # int = N dias
+
+# Filtro por agent:
+kiro-dash today --agent nyx
+kiro-dash projects --agent kiro_default --window cycle
+
+# Drill-down de tool específica:
+kiro-dash tool shell                # últimas 20 chamadas
+kiro-dash tool write --errors-only  # só erros
+kiro-dash tool read --tail 5 --hours 6
+```
+
+`--days N` e `--window <n>` são equivalentes (legacy + novo). `--show-input`
+no `tool` mostra também as keys do input (values nunca são retidos).
+
+### Plano e saldo
+
+```bash
 kiro-dash plan get
-kiro-dash balance                    # painel dedicado
-kiro-dash today                      # mostra linha de contexto do ciclo
+kiro-dash plan set pro+              # 2000 cr/mês (default da tier)
+kiro-dash plan set pro --credits 1500 --cycle-start 2026-05-15
+kiro-dash balance                    # saldo do ciclo corrente
 ```
 
 Tiers reconhecidas: `free` (50), `pro` (1000), `pro+` (2000), `power`
-(10000), `enterprise` (sem cap real).
+(10000), `enterprise` (sem cap real). Alertas visuais: amarelo a partir
+de 80%, vermelho a partir de 95%. Config persiste em
+`~/.config/kiro-dash/config.toml`.
 
-Alertas visuais: amarelo a partir de 80%, vermelho a partir de 95%.
+> Saldo é estimativa local. Sem `kiro-dash sync` ativo, consumo real
+> cross-device pode ser maior. Dashboard web (`kiro-cli dashboard`) é a
+> fonte autoritativa.
 
-Config persiste em `~/.config/kiro-dash/config.toml`.
+### Histórico
 
-> **Nota:** o saldo é estimativa local — se você usa Kiro em mais de um
-> dispositivo sem o `kiro-dash sync` ativo, o consumo real pode ser maior
-> que o calculado aqui. Dashboard web (`kiro-cli dashboard`) é a fonte
-> autoritativa.
-## TUI interativa
+Snapshots imutáveis de uso por dia em
+`~/.local/share/kiro-dash/snapshots/<YYYY-MM-DD>.<host>.json`.
 
 ```bash
-kiro-dash tui
+# Geração (lazy + self-healing automático nos comandos consumidores):
+kiro-dash snapshot                   # gera snapshots faltantes (até ontem)
+kiro-dash snapshot 2026-05-16        # gera/garante dia específico
+kiro-dash snapshot 2026-05-16 --force # sobrescreve
+
+# Consultas:
+kiro-dash today --day 2026-05-16     # snapshot ou live (D, D-1 são live)
+kiro-dash month                      # mês corrente
+kiro-dash month 2026-05
+kiro-dash year                       # ano corrente
+kiro-dash year 2026
+
+kiro-dash compare today yesterday
+kiro-dash compare week last-week
+kiro-dash compare month last-month
+kiro-dash compare 2026-05 2026-04
+kiro-dash compare 2026 2025
 ```
 
-Atalhos:
+**Janela stateless de 2 dias:** hoje e ontem são sempre re-lidos dos
+`.json` originais. Snapshot só fecha em **D-2 ou anterior**.
 
-| Tecla | Ação |
-|---|---|
-| `1` | Aba Now (sessões ativas) |
-| `2` | Aba Today |
-| `3` | Aba Projects |
-| `4` | Aba Models |
-| `5` | Aba Tools |
-| `6` | Aba Session (com seleção e drill-down) |
-| `←` / `→` | Navegar abas (bind padrão do Textual) |
-| `r` | Refresh manual da aba ativa |
-| `?` | Ajuda |
-| `q` | Sair |
+**Multi-host:** snapshots de hosts distintos coexistem
+(`2026-05-16.predator.json` + `2026-05-16.work.json`). Queries somam
+todos os hosts.
 
-**Auto-refresh seletivo** (mesmo padrão do `claude-dash` em produção):
-- **Now** atualiza sozinha a cada 2s (`NOW_REFRESH_SEC = 2.0`).
-- Demais abas são snapshot — pressione `r` para recomputar quando quiser.
-- Razão: Today/Tools/Session re-leem todas as sessões ou os transcripts
-  `.jsonl` inteiros; refresh contínuo seria caro.
+### Watchdog operacional (audit)
 
-## Mapeamento de projetos (heurística)
+Sem hooks, sem root. Lê `.json` + `.lock` nativos do Kiro.
 
-O `kiro-dash` consolida sessões em "projetos conceituais" mapeando o
-`cwd` da sessão em um label. Regras (na ordem):
+```bash
+# Inspecionar:
+kiro-dash audit running              # sessões com turn em curso AGORA
+kiro-dash audit stuck --threshold 600 # turns em curso > 10 min
+kiro-dash audit log <sid> --tail 20  # tool calls da sessão
+kiro-dash audit watch                # live (refresh 2s, Ctrl+C sai)
 
-| Padrão de path | Label |
-|---|---|
-| `~/iris/projetos/<categoria>/<projeto>/...` (categorias: pessoal, profissional, institucional, concluidos) | `<categoria>/<projeto>` |
-| `~/iris/projetos/normativos/...` | `iris-normativos` |
-| `~/iris/projetos/referencias/...` | `iris-referencias` |
-| `~/iris/projetos/...` (sem categoria) | `iris-projetos` |
-| `~/iris/...` | `iris-geral` |
-| `~/Desenvolvimento/ifsp/<grupo>/<repo>/...` | `ifsp/<grupo>/<repo>` |
-| `~/Desenvolvimento/<conta>/<repo>/...` | `<conta>/<repo>` |
-| `~/nyx/...` | `nyx` |
-| Outros sob `~` | path relativo ao home |
-| Fora do home | path literal |
+# Matar processo travado:
+kiro-dash audit kill <sid>           # interativo: TERM / KILL / cancel
+kiro-dash audit kill --all-stuck
+kiro-dash audit kill --all-stuck --yes
+```
 
-Override declarativo (`config.toml` com aliases custom) está disponível —
-ver seção abaixo.
+**SIGTERM** (graceful): pede ao Kiro pra fechar; preserva estado.
+**SIGKILL** (forçado): kernel mata na hora; estado pode ficar
+inconsistente. Use quando SIGTERM não responder.
 
-## Aliases de projeto (override declarativo)
+> Detecta travamento por "turn em curso há > threshold". Não distingue
+> "travado" de "trabalhando muito". Calibre o threshold (3m para tarefas
+> curtas, 30m para builds longos).
 
-Aliases têm prioridade sobre a heurística. Match por prefixo: o mais
-específico vence.
+### Sync multi-device
+
+Sincroniza apenas `.json` (metadata) entre dispositivos via Google Drive.
+**Não inclui** `.jsonl` (transcripts ficam locais).
+
+```bash
+kiro-dash sync push                  # local → Drive
+kiro-dash sync pull                  # Drive → local
+```
+
+**Pré-requisitos:** `rclone` instalado e remote `gdrive-pessoal`
+configurado (`rclone config`).
+
+**Hooks no agent Nyx** (em `~/.kiro/agents/nyx.json`):
+
+```json
+"hooks": {
+  "agentSpawn": [{ "command": "kiro-dash sync pull --remote gdrive-pessoal", "timeout_ms": 30000 }],
+  "stop":       [{ "command": "kiro-dash sync push --remote gdrive-pessoal", "timeout_ms": 30000 }]
+}
+```
+
+### Cache, aliases, configuração
+
+**Cache do parser** (`~/.cache/kiro-dash/`, mtime+size invalidation):
+
+```bash
+kiro-dash cache info                 # estatísticas
+kiro-dash cache clear                # limpa
+KIRO_DASH_NO_CACHE=1 kiro-dash today # bypass pontual
+```
+
+Sessões com `.lock` ativo bypassam cache automaticamente.
+
+**Aliases de projeto** (override declarativo da heurística):
 
 ```bash
 kiro-dash aliases set /srv/work/clientes/acme acme
@@ -209,177 +272,168 @@ kiro-dash aliases get
 kiro-dash aliases unset /srv/work/clientes/acme
 ```
 
-Persistido em `~/.config/kiro-dash/config.toml` na seção
-`[project_aliases]`.
+Aliases têm prioridade sobre a heurística — match por prefixo, mais
+específico vence. Persistido em `~/.config/kiro-dash/config.toml`,
+seção `[project_aliases]`.
 
-## Filtro por agent
+---
 
-```bash
-kiro-dash today --agent nyx
-kiro-dash projects --agent kiro_default --window cycle
-kiro-dash models --agent nyx --window month
-kiro-dash recent --agent nyx
-```
-
-`--agent <name>` isola a atividade de um agent específico (comparação
-por igualdade exata em `session.agent_name`).
-
-## Filtros temporais
-
-Comandos `today`, `projects` e `models` aceitam `--window`:
+## TUI interativa
 
 ```bash
-kiro-dash projects --window today        # só hoje
-kiro-dash projects --window week         # últimos 7 dias (default)
-kiro-dash projects --window month        # últimos 30 dias
-kiro-dash projects --window cycle        # desde cycle_start do plano
-kiro-dash projects --window all          # tudo desde sempre
-kiro-dash projects --window 14           # últimos 14 dias
+kiro-dash tui
 ```
 
-`--days N` segue funcionando como atalho legacy (override de `--window`).
-
-## Cache do parser
-
-Leituras de `.json`/`.jsonl` são memoizadas em
-`~/.cache/kiro-dash/` (ou `$XDG_CACHE_HOME/kiro-dash/`). Invalidação
-automática por `mtime + size`. Sessões em curso (com `.lock`) bypassam
-o cache para garantir frescor.
-
-```bash
-kiro-dash cache info     # estatísticas
-kiro-dash cache clear    # limpa tudo
-```
-
-Para desligar pontualmente: `KIRO_DASH_NO_CACHE=1 kiro-dash today`.
-
-### Benchmark (21 sessões, 2026-05-26)
-
-| Cenário | real |
+| Tecla | Ação |
 |---|---|
-| Sem cache | 0.089s |
-| Com cache (1ª — popular) | 0.090s |
-| Com cache (2ª — hit) | 0.090s |
+| `1` | Now (sessões ativas) |
+| `2` | Today (agregado do dia em 4 quadrantes) |
+| `3` | Projects (top projetos com heurística) |
+| `4` | Models |
+| `5` | Tools (com seleção e drill-down inline) |
+| `6` | Session (lista todas, ↑/↓ + Enter abre detalhes) |
+| `7` | History (sparklines + 4 cards comparativos) |
+| `←` / `→` | Navegar abas |
+| `r` | Refresh manual |
+| `?` | Ajuda |
+| `q` | Sair |
 
-> Com 21 sessões o startup do Python domina. O ganho será visível com
-> workspaces maiores (50+ sessões) onde o parse JSON é o gargalo.
-## Watchdog operacional (audit)
+**Auto-refresh seletivo:**
 
-Sem hooks, sem root. Lê os arquivos `.json`/`.lock` que o Kiro CLI já
-gera nativamente.
+- **Now** atualiza sozinha a cada 2s (única aba "live")
+- Demais abas: snapshot manual via `r`. Razão: relêem `.json`/`.jsonl`
+  inteiros — refresh contínuo seria caro.
 
-### Inspecionar
+**Aba History:** sparklines de 30 dias (créditos/dia) e 12 meses
+(créditos/mês) + 4 cards em grid 2×2 mostrando hoje × ontem, semana ×
+sem. anterior, mês × mês anterior, ano × ano anterior. Cores por delta
+(verde positivo, vermelho negativo).
 
-```bash
-kiro-dash audit running                  # sessões com turn em curso
-kiro-dash audit stuck --threshold 600    # turns em curso > 10 min
-kiro-dash audit log <sid> --tail 20      # tool calls da sessão
-kiro-dash audit watch                    # live (refresh 2s, Ctrl+C sai)
+**Aba Tools:** seleção de linha (↑/↓ + Enter) abre painel inferior com
+top 5 erros recentes daquela tool — `error_summary` mostra a 1ª linha do
+retorno (FileNotFoundError, exit code, etc.). Sem vazar prompts.
+
+---
+
+## Heurística de projetos
+
+Mapeia `cwd` da sessão em label de projeto (sobrescritível por aliases).
+Regras na ordem:
+
+| Padrão de path | Label |
+|---|---|
+| `~/iris/projetos/<categoria>/<projeto>/...` (categorias: `pessoal`, `profissional`, `institucional`, `concluidos`) | `<categoria>/<projeto>` |
+| `~/iris/projetos/normativos/...` | `iris-normativos` |
+| `~/iris/projetos/referencias/...` | `iris-referencias` |
+| `~/iris/projetos/...` (sem categoria) | `iris-projetos` |
+| `~/iris/...` | `iris-geral` |
+| `~/Desenvolvimento/ifsp/<grupo>/<repo>/...` | `ifsp/<grupo>/<repo>` |
+| `~/Desenvolvimento/<conta>/<repo>/...` | `<conta>/<repo>` |
+| `~/nyx/...` | `nyx` |
+| `~` (HOME exato) | `home` |
+| `~/Downloads`, `~/Documents`, `~/Desktop` (e subpastas) | `home/<nome>` |
+| Outros sob `~` | path relativo ao home |
+| Fora do home | path literal |
+
+Para custom mappings, use `kiro-dash aliases set`.
+
+---
+
+## Servidor MCP
+
+`kiro-dash-mcp` expõe o estado do Kiro CLI via [Model Context
+Protocol](https://modelcontextprotocol.io). Útil para agentes consumarem
+métricas durante a conversa, sem precisar abrir terminal.
+
+**Tools expostas:**
+
+| Tool | Retorna |
+|---|---|
+| `today_summary` | Agregado do dia local |
+| `active_sessions` | Sessões com lockfile no momento |
+| `session_details(prefix)` | Drill-down (estrutural; sem conteúdo) |
+| `account_info` | Conta, profile ARN, billing tier |
+| `top_projects(days, limit)` | Top projetos por créditos |
+| `top_models(days, limit)` | Top modelos por créditos |
+
+**Registro no Kiro CLI** (em `~/.kiro/agents/<seu-agent>.json`):
+
+```json
+"mcpServers": {
+  "kiro-dash": {
+    "command": "kiro-dash-mcp",
+    "timeout_ms": 30000
+  }
+}
 ```
 
-### Matar processo travado
+Reinicie a sessão Kiro CLI depois.
 
-```bash
-kiro-dash audit kill <sid>               # interativo: TERM / KILL / cancel
-kiro-dash audit kill --all-stuck         # mata todas travadas
-kiro-dash audit kill --all-stuck --yes   # sem confirmação
+Mesma superfície de privacidade da CLI — nenhuma tool MCP expõe conteúdo
+de mensagens.
+
+---
+
+## Stack e arquitetura
+
+- **Python 3.12+** stdlib first
+- **[`rich`](https://rich.readthedocs.io)** — output formatado
+- **[`click`](https://click.palletsprojects.com)** — CLI
+- **[`textual`](https://textual.textualize.io)** — TUI
+- **[`mcp`](https://github.com/modelcontextprotocol/python-sdk)** — servidor MCP
+- **[`tomli_w`](https://github.com/hukkin/tomli-w)** — escrita TOML
+
+Sem JavaScript/Node, sem banco de dados, sem servidor web. Tudo é
+arquivo local: `.json` (metadata Kiro), `.jsonl` (transcripts; lemos só
+metadata de tool calls), `.lock` (PID), `.toml` (config), snapshots
+JSON em `~/.local/share/kiro-dash/`.
+
+**Parser stateless por padrão:** cada execução re-lê o disco. Cache
+opcional acelera leituras repetidas. Snapshots persistem agregados
+diários para queries históricas e cross-device merge.
+
+**Clock injetável:** funções de janela aceitam kwarg `now: datetime |
+None = None`. Habilita testes determinísticos timezone-safe (sem
+`freezegun`), replay/snapshot histórico, auditoria reproduzível.
+
+**Multi-host:** snapshots distinguem origem por hostname; queries
+históricas somam todos os hosts do mesmo dia. Sync via rclone deixa
+arquivos coexistirem no Drive sem conflito de filename.
+
+Estrutura interna em `src/kiro_dash/`:
+
+```
+parser.py        # Lê .json e .lock, retorna Session/Turn/LockInfo
+jsonl_parser.py  # Lê .jsonl, retorna ToolCall (nome + status + summary)
+aggregator.py    # Agregações (modelo, agent, projeto, ciclo, janelas)
+account.py       # whoami parsing
+config.py        # TOML config (plan + aliases)
+project.py       # Heurística project_label
+snapshots.py     # Persistência diária + merge multi-host
+history.py       # Reconstrução month_summary, year_summary, diff
+cache.py         # Cache mtime+size do parser
+sync.py          # Wrapper rclone
+watchdog.py      # Detector running/stuck + kill
+visual.py        # Helpers bar_inline + sparkline
+mcp_server.py    # Servidor MCP (stdio)
+cli.py           # Subcomandos Click
+views/           # TUI Textual (App + 7 abas)
 ```
 
-**SIGTERM** (graceful): pede ao Kiro que feche. Pode demorar segundos
-mas preserva o estado da sessão (`.json` é finalizado, `.jsonl` flusha).
-
-**SIGKILL** (forçado): kernel mata na hora. Estado pode ficar
-inconsistente. Use quando SIGTERM não responder.
-
-### Limitações
-
-- Detecta travamento com base em "turn em curso há > threshold". Não há
-  heurística para distinguir "travado" de "trabalhando muito". Calibre
-  o threshold conforme uso (3m para tarefas curtas, 30m para builds).
-- Mata o processo do shell que executa `kiro-cli`, não dependências
-  spawn-adas (subagents, MCPs). Para garantir, `kill -SIGKILL -PGID`
-  pode ser melhor — não implementado por enquanto.
-
-## Drill-down de tools
+201+ testes pytest (parser, aggregator, snapshots, history, watchdog,
+visual, MCP, CLI, TUI). Rodar:
 
 ```bash
-kiro-dash tool shell                       # últimas 20 chamadas de shell
-kiro-dash tool write --errors-only         # só erros
-kiro-dash tool read --tail 5 --hours 6     # últimas 5 em 6h
+pip install -e ".[dev]"
+pytest tests/ -v
 ```
 
-Mostra: status, toolUseId, input keys (sem values), error summary
-(1ª linha do retorno quando status=error, capped 200 chars).
-
-Privacidade: `input.values` não são retidos pelo parser (Wave 1).
-`error_summary` é metadata operacional (FileNotFoundError, exit code,
-HTTP status), não vaza prompts.
-
-Na TUI, aba Tools (`5`): seleção de linha (↑/↓ + Enter) abre painel
-inferior com top 5 erros recentes.
-
-## Histórico (snapshots diários)
-
-Snapshots imutáveis de uso por dia local, em
-`~/.local/share/kiro-dash/snapshots/<YYYY-MM-DD>.<host>.json`.
-
-### Geração
-
-- **Lazy + self-healing:** comandos consumidores (`today`, `projects`,
-  `models`) chamam silenciosamente `ensure_snapshots_up_to(ontem)` no
-  início. Dias sem snapshot são gerados automaticamente.
-- **Manual:**
-  ```bash
-  kiro-dash snapshot                  # roda lazy explícito
-  kiro-dash snapshot 2026-05-16       # gera/garante dia específico
-  kiro-dash snapshot 2026-05-16 --force  # sobrescreve
-  ```
-
-### Multi-host
-
-Snapshots de hosts distintos coexistem (`2026-05-16.predator.json` +
-`2026-05-16.work.json`). Queries somam todos os hosts do mesmo dia.
-
-### Janela stateless
-
-Hoje e ontem **não** viram snapshot persistido pelo lazy — sempre
-re-lidos dos arquivos `~/.kiro/sessions/cli/*.json` originais. Snapshot
-só fecha em **D-2 ou anterior**.
-
-### Queries históricas
-
-```bash
-kiro-dash today --day 2026-05-16        # snapshot ou live (D, D-1)
-kiro-dash month                         # mês corrente
-kiro-dash month 2026-05
-kiro-dash year                          # ano corrente
-kiro-dash year 2026
-
-kiro-dash compare today yesterday
-kiro-dash compare week last-week
-kiro-dash compare 2026-05 2026-04
-kiro-dash compare 2026 2025
-```
-
-Comandos `month`/`year`/`compare` agregam snapshots diários sob demanda.
-Sem cache mensal — fonte única de verdade são os snapshots de dia.
-
-Ranges sem snapshot (dias antes da instalação ou da primeira execução)
-mostram zero. Use `kiro-dash snapshot` pra gerar manualmente.
-
-## Notas técnicas
-
-### Clock injetável
-
-Funções de janela temporal do `aggregator` aceitam um kwarg
-opcional `now: datetime | None = None`. Quando ausente, usa
-`datetime.now(timezone.utc)`. Quando passado, é fonte única do "agora".
-
-Habilita:
-- Testes determinísticos timezone-safe (sem `freezegun`)
-- Replay/snapshot histórico que precisa "fingir" um momento passado
-- Auditoria que reproduz cálculos de uma data específica
+---
 
 ## Licença
 
-Privado — uso pessoal de Leonardo Menzani.
+**Proprietary — uso pessoal de Leonardo Menzani.**
+
+Repositório público para transparência e auditoria. Uso, redistribuição
+ou modificação por terceiros não estão licenciados — entre em contato
+para negociar.
