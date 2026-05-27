@@ -1,0 +1,92 @@
+"""Aba Today — agregado do dia local."""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+from textual.app import ComposeResult
+from textual.containers import Container, Horizontal, Vertical
+from textual.widgets import DataTable, Static
+
+from kiro_dash.aggregator import (
+    Aggregate,
+    aggregate_by_agent,
+    aggregate_by_cwd,
+    aggregate_by_model,
+    aggregate_by_session,
+    total_credits,
+    turns_in_local_day,
+)
+from kiro_dash.models import Session
+from kiro_dash.parser import load_all_sessions
+
+
+@dataclass(frozen=True, slots=True)
+class TodaySnapshot:
+    total_credits: float
+    total_turns: int
+    total_sessions: int
+    by_model: list[Aggregate] = field(default_factory=list)
+    by_agent: list[Aggregate] = field(default_factory=list)
+    by_cwd: list[Aggregate] = field(default_factory=list)
+    by_session: list[Aggregate] = field(default_factory=list)
+
+
+def build_today_snapshot(sessions: list[Session]) -> TodaySnapshot:
+    pairs = turns_in_local_day(sessions)
+    return TodaySnapshot(
+        total_credits=total_credits(pairs),
+        total_turns=len(pairs),
+        total_sessions=len({s.session_id for s, _ in pairs}),
+        by_model=aggregate_by_model(pairs),
+        by_agent=aggregate_by_agent(pairs),
+        by_cwd=aggregate_by_cwd(pairs),
+        by_session=aggregate_by_session(pairs),
+    )
+
+
+def _aggs_to_rows(aggs: list[Aggregate]) -> list[tuple[str, ...]]:
+    return [
+        (a.label, f"{a.credits:.2f}", str(a.turns), str(a.sessions))
+        for a in aggs
+    ]
+
+
+class TodayTab(Container):
+    def compose(self) -> ComposeResult:
+        yield Static(id="today-header")
+        with Horizontal():
+            with Vertical():
+                yield Static("[b]Por modelo[/b]")
+                yield DataTable(id="today-models", zebra_stripes=True)
+                yield Static("[b]Por agent[/b]")
+                yield DataTable(id="today-agents", zebra_stripes=True)
+            with Vertical():
+                yield Static("[b]Por projeto (cwd)[/b]")
+                yield DataTable(id="today-cwds", zebra_stripes=True)
+                yield Static("[b]Por sessão[/b]")
+                yield DataTable(id="today-sessions", zebra_stripes=True)
+
+    def on_mount(self) -> None:
+        for tid in ("#today-models", "#today-agents", "#today-cwds", "#today-sessions"):
+            t = self.query_one(tid, DataTable)
+            t.add_columns("label", "créditos", "turns", "sessões")
+        self.refresh_snapshot()
+
+    def refresh_snapshot(self) -> None:
+        sessions = load_all_sessions()
+        snap = build_today_snapshot(sessions)
+
+        self.query_one("#today-header", Static).update(
+            f"[b green]{snap.total_credits:.2f}[/b green] créditos  "
+            f"[dim]{snap.total_turns} turns / {snap.total_sessions} sessões[/dim]"
+        )
+        for tid, aggs in [
+            ("#today-models", snap.by_model),
+            ("#today-agents", snap.by_agent),
+            ("#today-cwds", snap.by_cwd),
+            ("#today-sessions", snap.by_session),
+        ]:
+            t = self.query_one(tid, DataTable)
+            t.clear()
+            for row in _aggs_to_rows(aggs):
+                t.add_row(*row)
