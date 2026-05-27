@@ -132,6 +132,65 @@ def aggregate_by_agent(pairs: list[tuple[Session, Turn]]) -> list[Aggregate]:
     return _aggregate_pairs(pairs, key=lambda s, t: t.agent_name or s.agent_name or "?")
 
 
+@dataclass(frozen=True, slots=True)
+class AgentPairAgg:
+    """Sumário cruzado runtime × persona (Wave 3 hotfix v0.4.1).
+
+    - ``runtime`` = ``Turn.agent_name`` (engine que executou — ``kiro_default``,
+      ``auto``, etc.)
+    - ``persona`` = ``Session.agent_name`` (persona configurada via ``--agent``)
+
+    Mostra simultaneamente quem executou e em nome de qual persona, evitando
+    a confusão de só ver ``kiro_default`` quando todos os turns rodam sob essa
+    runtime mas em sessões com personas diferentes.
+    """
+
+    runtime: str
+    persona: str
+    credits: float
+    turns: int
+    sessions: int
+    duration: timedelta
+    tool_uses: int
+
+
+def aggregate_by_agent_pair(
+    pairs: list[tuple[Session, Turn]],
+) -> list[AgentPairAgg]:
+    """Agrega cruzando ``Turn.agent_name`` (runtime) × ``Session.agent_name`` (persona).
+
+    Ordenado por créditos descrescente.
+    """
+    buckets: dict[tuple[str, str], dict] = defaultdict(
+        lambda: {"credits": 0.0, "turns": 0, "sessions": set(),
+                 "duration": timedelta(), "tools": 0}
+    )
+    for s, t in pairs:
+        runtime = (t.agent_name or "").strip() or "?"
+        persona = (s.agent_name or "").strip() or "?"
+        b = buckets[(runtime, persona)]
+        b["credits"] += t.credits
+        b["turns"] += 1
+        b["sessions"].add(s.session_id)
+        b["duration"] += t.duration
+        b["tools"] += t.builtin_tool_uses
+
+    out = [
+        AgentPairAgg(
+            runtime=runtime,
+            persona=persona,
+            credits=v["credits"],
+            turns=v["turns"],
+            sessions=len(v["sessions"]),
+            duration=v["duration"],
+            tool_uses=v["tools"],
+        )
+        for (runtime, persona), v in buckets.items()
+    ]
+    out.sort(key=lambda a: a.credits, reverse=True)
+    return out
+
+
 def aggregate_by_cwd(pairs: list[tuple[Session, Turn]]) -> list[Aggregate]:
     """Agrega por ``cwd`` da sessão (proxy de projeto)."""
     return _aggregate_pairs(pairs, key=lambda s, t: s.cwd or "?")

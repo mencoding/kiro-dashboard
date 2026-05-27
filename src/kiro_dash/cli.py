@@ -24,8 +24,10 @@ from kiro_dash import __version__
 from kiro_dash.account import run_whoami
 from kiro_dash.aggregator import (
     Aggregate,
+    AgentPairAgg,
     active_sessions,
     aggregate_by_agent,
+    aggregate_by_agent_pair,
     aggregate_by_cwd,
     aggregate_by_model,
     aggregate_by_project,
@@ -128,6 +130,34 @@ def _aggregates_table(title: str, aggs: list[Aggregate], label_header: str) -> T
     return table
 
 
+def _agent_pair_table(aggs: list["AgentPairAgg"]) -> Table:
+    """Tabela 5 colunas: runtime + persona + métricas (Wave 3 hotfix v0.4.1).
+
+    Distingue runtime engine (kiro_default/auto) da persona configurada
+    (nyx/iris/kiro_default), evitando ambiguidade quando todos os turns
+    rodam em ``kiro_default`` mas em sessões com personas diferentes.
+    """
+    table = Table(title="Por agent (runtime × persona)", expand=False, header_style="bold")
+    table.add_column("runtime")
+    table.add_column("persona")
+    table.add_column("créditos", justify="right")
+    table.add_column("turns", justify="right")
+    table.add_column("sessões", justify="right")
+    table.add_column("duração", justify="right")
+    table.add_column("tools", justify="right")
+    for a in aggs:
+        table.add_row(
+            a.runtime,
+            a.persona,
+            _fmt_credits(a.credits),
+            str(a.turns),
+            str(a.sessions),
+            _fmt_duration(a.duration),
+            str(a.tool_uses),
+        )
+    return table
+
+
 # ─── grupo principal ──────────────────────────────────────────────────────
 
 
@@ -219,7 +249,7 @@ def today(day_str: str | None, agent: str | None) -> None:
     console.print()
 
     console.print(_aggregates_table("Por modelo", aggregate_by_model(pairs), "modelo"))
-    console.print(_aggregates_table("Por agent", aggregate_by_agent(pairs), "agent"))
+    console.print(_agent_pair_table(aggregate_by_agent_pair(pairs)))
     aliases = load_aliases(default_config_path())
     console.print(_aggregates_table("Por projeto", aggregate_by_project(pairs, aliases=aliases), "projeto"))
     console.print(_aggregates_table("Por sessão", aggregate_by_session(pairs), "sessão"))

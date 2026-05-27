@@ -143,3 +143,83 @@ def test_filter_by_agent_none_passa_tudo():
     pairs = [(s, t) for t in s.turns]
     out = filter_by_agent(pairs, None)
     assert out == pairs
+
+
+# ─── aggregate_by_agent_pair (Wave 3 hotfix v0.4.1) ────────────────────────
+
+
+def test_aggregate_by_agent_pair_separa_runtime_e_persona():
+    """Sessão Nyx (persona) cujos turns rodam em kiro_default (runtime) → 1 entrada."""
+    from kiro_dash.aggregator import aggregate_by_agent_pair
+
+    now = datetime.now(timezone.utc)
+    s_nyx = make_session(
+        session_id="nyx",
+        agent_name="nyx",
+        turns=[
+            make_turn(end_timestamp=now, agent_name="kiro_default", credits=10),
+            make_turn(end_timestamp=now, agent_name="kiro_default", credits=5),
+        ],
+    )
+    pairs = [(s_nyx, t) for t in s_nyx.turns]
+
+    aggs = aggregate_by_agent_pair(pairs)
+    assert len(aggs) == 1
+    a = aggs[0]
+    assert a.runtime == "kiro_default"
+    assert a.persona == "nyx"
+    assert a.credits == 15
+    assert a.turns == 2
+    assert a.sessions == 1
+
+
+def test_aggregate_by_agent_pair_separa_subagent_auto():
+    """Sessão Nyx com mistura kiro_default + auto (subagent) → 2 entradas."""
+    from kiro_dash.aggregator import aggregate_by_agent_pair
+
+    now = datetime.now(timezone.utc)
+    s = make_session(
+        session_id="x",
+        agent_name="nyx",
+        turns=[
+            make_turn(end_timestamp=now, agent_name="kiro_default", credits=10),
+            make_turn(end_timestamp=now, agent_name="auto", credits=3),
+        ],
+    )
+    pairs = [(s, t) for t in s.turns]
+
+    aggs = aggregate_by_agent_pair(pairs)
+    by_runtime = {a.runtime: a for a in aggs}
+    assert set(by_runtime.keys()) == {"kiro_default", "auto"}
+    assert by_runtime["kiro_default"].persona == "nyx"
+    assert by_runtime["auto"].persona == "nyx"
+    assert by_runtime["kiro_default"].credits == 10
+    assert by_runtime["auto"].credits == 3
+
+
+def test_aggregate_by_agent_pair_ordenado_por_creditos_desc():
+    from kiro_dash.aggregator import aggregate_by_agent_pair
+
+    now = datetime.now(timezone.utc)
+    s1 = make_session(session_id="a", agent_name="nyx",
+                      turns=[make_turn(end_timestamp=now, agent_name="kiro_default", credits=2)])
+    s2 = make_session(session_id="b", agent_name="iris",
+                      turns=[make_turn(end_timestamp=now, agent_name="kiro_default", credits=20)])
+    pairs = [(s, t) for s in (s1, s2) for t in s.turns]
+
+    aggs = aggregate_by_agent_pair(pairs)
+    assert aggs[0].persona == "iris"
+    assert aggs[1].persona == "nyx"
+
+
+def test_aggregate_by_agent_pair_persona_vazia_vira_interrogacao():
+    from kiro_dash.aggregator import aggregate_by_agent_pair
+
+    now = datetime.now(timezone.utc)
+    s = make_session(session_id="x", agent_name="",
+                     turns=[make_turn(end_timestamp=now, agent_name="", credits=1)])
+    pairs = [(s, t) for t in s.turns]
+
+    aggs = aggregate_by_agent_pair(pairs)
+    assert aggs[0].runtime == "?"
+    assert aggs[0].persona == "?"
