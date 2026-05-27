@@ -212,6 +212,31 @@ kiro-dash projects --window 14           # últimos 14 dias
 
 `--days N` segue funcionando como atalho legacy (override de `--window`).
 
+## Cache do parser
+
+Leituras de `.json`/`.jsonl` são memoizadas em
+`~/.cache/kiro-dash/` (ou `$XDG_CACHE_HOME/kiro-dash/`). Invalidação
+automática por `mtime + size`. Sessões em curso (com `.lock`) bypassam
+o cache para garantir frescor.
+
+```bash
+kiro-dash cache info     # estatísticas
+kiro-dash cache clear    # limpa tudo
+```
+
+Para desligar pontualmente: `KIRO_DASH_NO_CACHE=1 kiro-dash today`.
+
+### Benchmark (21 sessões, 2026-05-26)
+
+| Cenário | real |
+|---|---|
+| Sem cache | 0.089s |
+| Com cache (1ª — popular) | 0.090s |
+| Com cache (2ª — hit) | 0.090s |
+
+> Com 21 sessões o startup do Python domina. O ganho será visível com
+> workspaces maiores (50+ sessões) onde o parse JSON é o gargalo.
+
 ## Licença
 
 Privado — uso pessoal de Leonardo Menzani.
