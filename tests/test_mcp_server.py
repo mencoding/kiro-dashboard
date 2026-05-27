@@ -16,6 +16,18 @@ from tests.fixtures.sessions_synthetic import make_session, make_turn
 
 
 def _fake_sessions():
+    """Fixture timezone-safe: usa offsets curtos pra nunca cruzar dia local.
+
+    Antes usávamos ``datetime.now(timezone.utc) - timedelta(hours=2)``, mas
+    quando o relógio cruza meia-noite UTC e o fuso local ainda está em
+    "ontem", o turn de 2h atrás cai em "ontem local" e some de
+    ``turns_in_local_day``.
+
+    Estratégia: ancorar em ``now`` UTC e usar deltas de minutos (≤30min).
+    Em fusos sãos (UTC-12 a UTC+14) qualquer ponto a menos de 30 minutos
+    do agora cai no mesmo dia local — isso vale tanto para ``today`` quanto
+    para janelas maiores (last_days, etc.).
+    """
     now = datetime.now(timezone.utc)
     return [
         make_session(
@@ -23,6 +35,7 @@ def _fake_sessions():
             cwd="/proj/alfa",
             model_id="claude-opus-4.7",
             is_active=True,
+            updated_at=now - timedelta(minutes=1),
             turns=[
                 make_turn(end_timestamp=now - timedelta(minutes=5), credits=3.0),
                 make_turn(end_timestamp=now - timedelta(minutes=1), credits=2.0),
@@ -33,8 +46,8 @@ def _fake_sessions():
             cwd="/proj/beta",
             model_id="auto",
             is_active=False,
-            updated_at=now - timedelta(hours=2),
-            turns=[make_turn(end_timestamp=now - timedelta(hours=2), credits=1.5)],
+            updated_at=now - timedelta(minutes=20),
+            turns=[make_turn(end_timestamp=now - timedelta(minutes=20), credits=1.5)],
         ),
     ]
 
