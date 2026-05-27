@@ -173,6 +173,31 @@ def test_turns_in_local_day_now_injetado_filtra_dia_anterior():
     assert pairs == []
 
 
+def test_turns_in_last_days_now_injetado():
+    fake_now = datetime(2026, 5, 16, 15, 0, tzinfo=timezone.utc)
+    s = make_session(turns=[
+        make_turn(end_timestamp=fake_now - timedelta(days=3), credits=10),
+        make_turn(end_timestamp=fake_now - timedelta(days=10), credits=20),
+    ])
+    pairs = turns_in_last_days([s], days=7, now=fake_now)
+    assert len(pairs) == 1
+    assert pairs[0][1].credits == 10
+
+
+def test_turns_in_cycle_now_injetado():
+    from kiro_dash.aggregator import turns_in_cycle
+    from datetime import date
+
+    fake_now = datetime(2026, 5, 16, 15, 0, tzinfo=timezone.utc)
+    cycle = date(2026, 5, 1)
+    s = make_session(turns=[
+        make_turn(end_timestamp=fake_now - timedelta(days=2), credits=5),
+        make_turn(end_timestamp=fake_now - timedelta(days=20), credits=99),
+    ])
+    pairs = turns_in_cycle([s], cycle, now=fake_now)
+    assert sum(t.credits for _, t in pairs) == 5
+
+
 # ─── aggregate_by_agent_pair (Wave 3 hotfix v0.4.1) ────────────────────────
 
 

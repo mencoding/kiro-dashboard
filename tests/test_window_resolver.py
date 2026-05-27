@@ -77,3 +77,14 @@ def test_resolve_window_int_string_dias():
 def test_resolve_window_invalid_raises():
     with pytest.raises(ValueError):
         resolve_window([], "ontem", cycle_start=date(2000, 1, 1))
+
+
+def test_resolve_window_now_injetado():
+    fake_now = datetime(2026, 5, 16, 15, 0, tzinfo=timezone.utc)
+    s = make_session(turns=[
+        _turn(fake_now - timedelta(days=2), credits=5),
+        _turn(fake_now - timedelta(days=10), credits=20),
+    ])
+    pairs = resolve_window([s], "week", cycle_start=date(2000, 1, 1), now=fake_now)
+    assert len(pairs) == 1
+    assert pairs[0][1].credits == 5
