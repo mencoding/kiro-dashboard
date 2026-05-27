@@ -126,6 +126,30 @@ E em `hooks.stop`:
 - `.jsonl` (transcripts) **NÃO** sai do dispositivo
 - `.lock` (estado local) **NÃO** sai do dispositivo
 
+## Plano e saldo estimado
+
+Declare seu plano para que o painel mostre saldo restante do ciclo:
+
+```bash
+kiro-dash plan set pro+              # 2000 créditos/mês (default da tier)
+kiro-dash plan set pro --credits 1500 --cycle-start 2026-05-15  # overrides
+kiro-dash plan get
+kiro-dash balance                    # painel dedicado
+kiro-dash today                      # mostra linha de contexto do ciclo
+```
+
+Tiers reconhecidas: `free` (50), `pro` (1000), `pro+` (2000), `power`
+(10000), `enterprise` (sem cap real).
+
+Alertas visuais: amarelo a partir de 80%, vermelho a partir de 95%.
+
+Config persiste em `~/.config/kiro-dash/config.toml`.
+
+> **Nota:** o saldo é estimativa local — se você usa Kiro em mais de um
+> dispositivo sem o `kiro-dash sync` ativo, o consumo real pode ser maior
+> que o calculado aqui. Dashboard web (`kiro-cli dashboard`) é a fonte
+> autoritativa.
+
 ## Licença
 
 Privado — uso pessoal de Leonardo Menzani.

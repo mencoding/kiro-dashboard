@@ -153,6 +153,45 @@ def active_sessions(sessions: list[Session]) -> list[Session]:
     return [s for s in sessions if s.is_active]
 
 
+def turns_in_cycle(
+    sessions: list[Session],
+    cycle_start: date,
+) -> list[tuple[Session, Turn]]:
+    """Pares (sessão, turn) com end_timestamp >= cycle_start (UTC)."""
+    tz_local = datetime.now().astimezone().tzinfo
+    start_local = datetime.combine(cycle_start, time.min, tzinfo=tz_local)
+    start_utc = start_local.astimezone(timezone.utc)
+
+    out: list[tuple[Session, Turn]] = []
+    for s in sessions:
+        for t in s.turns:
+            if t.end_timestamp >= start_utc:
+                out.append((s, t))
+    return out
+
+
+def balance_in_cycle(
+    sessions: list[Session],
+    cycle_start: date,
+    *,
+    monthly_credits: int,
+) -> dict:
+    """Calcula saldo do ciclo: consumed / remaining / pct_used."""
+    pairs = turns_in_cycle(sessions, cycle_start)
+    consumed = sum(t.credits for _, t in pairs)
+    remaining = monthly_credits - consumed
+    pct = (consumed / monthly_credits * 100.0) if monthly_credits > 0 else 0.0
+    return {
+        "consumed": round(consumed, 6),
+        "remaining": round(remaining, 6),
+        "pct_used": round(pct, 2),
+        "monthly_credits": monthly_credits,
+        "cycle_start": cycle_start,
+        "turns": len(pairs),
+        "sessions": len({s.session_id for s, _ in pairs}),
+    }
+
+
 from kiro_dash.jsonl_parser import iter_tool_calls
 
 

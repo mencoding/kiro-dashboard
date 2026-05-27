@@ -29,9 +29,18 @@ from kiro_dash.aggregator import (
     aggregate_by_model,
     aggregate_by_session,
     aggregate_tools_in_window,
+    balance_in_cycle,
     total_credits,
     turns_in_last_days,
     turns_in_local_day,
+)
+from kiro_dash.config import (
+    DEFAULT_MONTHLY_CREDITS,
+    VALID_TIERS,
+    PlanConfig,
+    default_config_path,
+    load_plan,
+    save_plan,
 )
 from kiro_dash.models import Session
 from kiro_dash.parser import (
@@ -182,6 +191,17 @@ def today(day_str: str | None) -> None:
     header.append(f"{_fmt_credits(total)} créditos  ", style="bold green")
     header.append(f"{len(pairs)} turns em {n_sessions} sessões")
     console.print(Panel(header, title="Hoje", expand=False))
+
+    # Contexto do ciclo (plano + saldo)
+    p = load_plan(default_config_path())
+    bal = balance_in_cycle(sessions, p.cycle_start, monthly_credits=p.monthly_credits)
+    ctx_color = _balance_color(bal["pct_used"])
+    ctx = Text()
+    ctx.append(f"  Ciclo {p.tier}: ", style="dim")
+    ctx.append(f"{_fmt_credits(bal['consumed'])} / {bal['monthly_credits']} ", style=ctx_color)
+    ctx.append(f"({bal['pct_used']:.1f}%)", style=ctx_color)
+    console.print(ctx)
+    console.print()
 
     console.print(_aggregates_table("Por modelo", aggregate_by_model(pairs), "modelo"))
     console.print(_aggregates_table("Por agent", aggregate_by_agent(pairs), "agent"))
@@ -536,6 +556,106 @@ def sync_pull_cmd(remote: str) -> None:
         console.print(f"[red]Falha: {err}[/red]")
         raise SystemExit(1)
     console.print("[green]Pull concluído.[/green]")
+
+
+# ─── plan ─────────────────────────────────────────────────────────────────
+
+
+@main.group()
+def plan() -> None:
+    """Gestão do plano declarado (tier, créditos mensais, ciclo)."""
+
+
+@plan.command("get")
+def plan_get() -> None:
+    """Mostra o plano atual."""
+    p = load_plan(default_config_path())
+    table = Table(show_header=False, box=None, padding=(0, 1))
+    table.add_column(style="dim")
+    table.add_column()
+    table.add_row("Tier", p.tier)
+    table.add_row("Créditos mensais", str(p.monthly_credits))
+    table.add_row("Ciclo iniciado", p.cycle_start.isoformat())
+    table.add_row("Config", str(default_config_path()))
+    console.print(Panel(table, title="Plano", expand=False))
+
+
+@plan.command("set")
+@click.argument("tier")
+@click.option("--credits", "credits_override", type=int, default=None,
+              help="Override do default de créditos da tier.")
+@click.option("--cycle-start", "cycle_start_str", default=None,
+              help="Data de início do ciclo (YYYY-MM-DD).")
+def plan_set(tier: str, credits_override: int | None, cycle_start_str: str | None) -> None:
+    """Define o plano. Tier deve estar em {free, pro, pro+, power, enterprise}."""
+    if tier not in VALID_TIERS:
+        console.print(f"[red]tier inválido: '{tier}'. Use um de: {sorted(VALID_TIERS)}.[/red]")
+        raise SystemExit(2)
+
+    monthly = credits_override or DEFAULT_MONTHLY_CREDITS[tier]
+
+    if cycle_start_str:
+        from datetime import date as _date
+        try:
+            cycle = _date.fromisoformat(cycle_start_str)
+        except ValueError:
+            console.print(f"[red]cycle-start inválido: '{cycle_start_str}'. Use YYYY-MM-DD.[/red]")
+            raise SystemExit(2)
+    else:
+        existing = load_plan(default_config_path())
+        cycle = existing.cycle_start
+
+    p = PlanConfig(tier=tier, monthly_credits=monthly, cycle_start=cycle)
+    save_plan(p, default_config_path())
+    console.print(f"[green]Plano salvo:[/green] {p.tier} ({p.monthly_credits} cr/mês), ciclo {p.cycle_start.isoformat()}")
+
+
+# ─── balance ──────────────────────────────────────────────────────────────
+
+
+def _balance_color(pct: float) -> str:
+    if pct >= 95:
+        return "red"
+    if pct >= 80:
+        return "yellow"
+    return "green"
+
+
+@main.command()
+def balance() -> None:
+    """Saldo estimado do ciclo corrente."""
+    p = load_plan(default_config_path())
+    sessions = load_all_sessions()
+    bal = balance_in_cycle(sessions, p.cycle_start, monthly_credits=p.monthly_credits)
+
+    color = _balance_color(bal["pct_used"])
+    bar = Text()
+    used_blocks = min(20, int(bal["pct_used"] / 5))
+    bar.append("█" * used_blocks, style=color)
+    bar.append("░" * (20 - used_blocks), style="dim")
+
+    table = Table(show_header=False, box=None, padding=(0, 1))
+    table.add_column(style="dim")
+    table.add_column()
+    table.add_row("Tier", p.tier)
+    table.add_row("Ciclo desde", p.cycle_start.isoformat())
+    table.add_row(
+        "Consumo",
+        f"{_fmt_credits(bal['consumed'])} / {bal['monthly_credits']} créditos",
+    )
+    table.add_row("Restante", _fmt_credits(bal["remaining"]))
+    table.add_row("Uso", Text(f"{bal['pct_used']:.1f}%", style=color))
+    table.add_row("Barra", bar)
+    table.add_row("Turns no ciclo", str(bal["turns"]))
+    table.add_row("Sessões no ciclo", str(bal["sessions"]))
+
+    title = "Saldo do ciclo"
+    if bal["pct_used"] >= 95:
+        title += " — ⚠️ próximo do limite"
+    elif bal["pct_used"] >= 80:
+        title += " — atenção"
+
+    console.print(Panel(table, title=title, expand=False))
 
 
 if __name__ == "__main__":  # pragma: no cover
