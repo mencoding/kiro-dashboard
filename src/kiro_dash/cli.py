@@ -316,6 +316,82 @@ def today(day_str: str | None, agent: str | None) -> None:
     console.print(_aggregates_table("Por sessão", aggregate_by_session(pairs), "sessão", show_sessions=False))
 
 
+# ─── month / year ────────────────────────────────────────────────────────
+
+
+def _render_period_summary(s) -> None:
+    """Header + breakdowns do PeriodSummary."""
+    if s.days_with_data == 0:
+        console.print(f"[yellow]Sem snapshots no período {s.period_label}.[/yellow]")
+        return
+    header = Text()
+    header.append(f"{s.period_label}  ", style="bold")
+    header.append(f"{_fmt_credits(s.credits)} créditos  ", style="bold green")
+    header.append(f"{s.turns} turns / {s.sessions} sessões  ")
+    header.append(f"({s.days_with_data} dias com dados)", style="dim")
+    console.print(Panel(header, title="Resumo", expand=False))
+
+    if s.by_model:
+        t = Table(title="Por modelo", expand=False, header_style="bold")
+        for col in ("modelo", "créditos", "turns", "sessões"):
+            t.add_column(col, justify="right" if col != "modelo" else "left")
+        for m in s.by_model:
+            t.add_row(m["label"], _fmt_credits(m["credits"]),
+                      str(m["turns"]), str(m["sessions"]))
+        console.print(t)
+
+    if s.by_project:
+        t = Table(title="Por projeto", expand=False, header_style="bold")
+        for col in ("projeto", "créditos", "turns", "sessões"):
+            t.add_column(col, justify="right" if col != "projeto" else "left")
+        for p in s.by_project:
+            t.add_row(p["label"], _fmt_credits(p["credits"]),
+                      str(p["turns"]), str(p["sessions"]))
+        console.print(t)
+
+
+@main.command()
+@click.argument("month_str", required=False)
+def month(month_str: str | None) -> None:
+    """Resumo mensal de uso (lê snapshots). Formato: YYYY-MM."""
+    from kiro_dash.history import month_summary
+
+    if month_str is None:
+        t = datetime.now().astimezone().date()
+        year, m = t.year, t.month
+    else:
+        try:
+            year, m = map(int, month_str.split("-"))
+        except (ValueError, AttributeError):
+            console.print(f"[red]Formato inválido: '{month_str}'. Use YYYY-MM.[/red]")
+            raise SystemExit(2)
+        if not (1 <= m <= 12):
+            console.print(f"[red]Mês inválido: {m}.[/red]")
+            raise SystemExit(2)
+
+    summary = month_summary(year, m)
+    _render_period_summary(summary)
+
+
+@main.command()
+@click.argument("year_str", required=False)
+def year(year_str: str | None) -> None:
+    """Resumo anual de uso (lê snapshots). Formato: YYYY."""
+    from kiro_dash.history import year_summary
+
+    if year_str is None:
+        y = datetime.now().astimezone().year
+    else:
+        try:
+            y = int(year_str)
+        except ValueError:
+            console.print(f"[red]Ano inválido: '{year_str}'.[/red]")
+            raise SystemExit(2)
+
+    summary = year_summary(y)
+    _render_period_summary(summary)
+
+
 # ─── session ─────────────────────────────────────────────────────────────
 
 
