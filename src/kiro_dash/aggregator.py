@@ -127,11 +127,11 @@ def aggregate_by_cwd(pairs: list[tuple[Session, Turn]]) -> list[Aggregate]:
     return _aggregate_pairs(pairs, key=lambda s, t: s.cwd or "?")
 
 
-def aggregate_by_project(pairs: list[tuple[Session, Turn]]) -> list[Aggregate]:
-    """Agrega por ``project_label(s.cwd)`` (heurística — Frente G)."""
+def aggregate_by_project(pairs: list[tuple[Session, Turn]], *, aliases: dict[str, str] | None = None) -> list[Aggregate]:
+    """Agrega por ``project_label(s.cwd, aliases=aliases)``."""
     from kiro_dash.project import project_label
 
-    return _aggregate_pairs(pairs, key=lambda s, t: project_label(s.cwd))
+    return _aggregate_pairs(pairs, key=lambda s, t: project_label(s.cwd, aliases=aliases))
 
 
 def aggregate_by_session(pairs: list[tuple[Session, Turn]]) -> list[Aggregate]:

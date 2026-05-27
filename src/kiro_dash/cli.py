@@ -41,6 +41,7 @@ from kiro_dash.config import (
     VALID_TIERS,
     PlanConfig,
     default_config_path,
+    load_aliases,
     load_plan,
     save_plan,
 )
@@ -207,7 +208,8 @@ def today(day_str: str | None) -> None:
 
     console.print(_aggregates_table("Por modelo", aggregate_by_model(pairs), "modelo"))
     console.print(_aggregates_table("Por agent", aggregate_by_agent(pairs), "agent"))
-    console.print(_aggregates_table("Por projeto", aggregate_by_project(pairs), "projeto"))
+    aliases = load_aliases(default_config_path())
+    console.print(_aggregates_table("Por projeto", aggregate_by_project(pairs, aliases=aliases), "projeto"))
     console.print(_aggregates_table("Por sessão", aggregate_by_session(pairs), "sessão"))
 
 
@@ -410,7 +412,7 @@ def projects(window: str, days: int | None, limit: int) -> None:
         console.print(f"[yellow]Sem turns na janela ({window_label}).[/yellow]")
         return
 
-    aggs = aggregate_by_project(pairs)[:limit]
+    aggs = aggregate_by_project(pairs, aliases=load_aliases(default_config_path()))[:limit]
     total = total_credits(pairs)
 
     header = Text()
