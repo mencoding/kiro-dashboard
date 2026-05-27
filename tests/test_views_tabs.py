@@ -61,3 +61,11 @@ def test_build_models_snapshot_uses_window():
     sessions = _two_sessions()
     snap = build_models_snapshot(sessions, days=30)
     assert snap.window_days == 30
+
+from kiro_dash.views.tabs.session_tab import SessionTab  # noqa: F401
+
+
+def test_session_tab_module_imports_cleanly():
+    """Smoke — o módulo importa sem erro."""
+    from kiro_dash.views.tabs import session_tab
+    assert hasattr(session_tab, "SessionTab")
