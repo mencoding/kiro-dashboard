@@ -41,6 +41,13 @@ from kiro_dash.parser import (
     load_all_sessions,
     load_session_file,
 )
+from kiro_dash.sync import (
+    SyncConfig,
+    rclone_available,
+    rclone_remote_exists,
+    sync_pull,
+    sync_push,
+)
 
 console = Console()
 
@@ -471,6 +478,64 @@ def tools(hours: int, limit: int) -> None:
         err_cell = Text(str(a["errors"]), style="red") if a["errors"] else Text("0", style="dim")
         table.add_row(a["name"], str(a["count"]), str(a["sessions"]), err_cell)
     console.print(table)
+
+
+# ─── sync ─────────────────────────────────────────────────────────────────
+
+_DEFAULT_REMOTE = "gdrive-pessoal"
+_DEFAULT_REMOTE_PATH = "kiro-dash/sessions"
+
+
+def _ensure_rclone(remote: str) -> SyncConfig | None:
+    """Verifica binário e remote; mensagens de erro coerentes."""
+    if not rclone_available():
+        console.print(
+            "[red]rclone não está no PATH.[/red] Instale: "
+            "`sudo apt install rclone` ou veja https://rclone.org/install/"
+        )
+        return None
+    if not rclone_remote_exists(remote):
+        console.print(
+            f"[red]Remote rclone '{remote}' não configurado.[/red] "
+            f"Rode: rclone config (criar remote tipo 'drive')."
+        )
+        return None
+    return SyncConfig(remote=remote, remote_path=_DEFAULT_REMOTE_PATH)
+
+
+@main.group()
+def sync() -> None:
+    """Sincronização de sessões com Google Drive (padrão Iris)."""
+
+
+@sync.command("push")
+@click.option("--remote", default=_DEFAULT_REMOTE, help="Nome do remote rclone.")
+def sync_push_cmd(remote: str) -> None:
+    """Envia .json locais para o Drive (aditivo, não-destrutivo)."""
+    cfg = _ensure_rclone(remote)
+    if cfg is None:
+        raise SystemExit(1)
+    console.print(f"[dim]Enviando {DEFAULT_SESSIONS_DIR} → {cfg.remote_uri}…[/dim]")
+    ok, err = sync_push(cfg, DEFAULT_SESSIONS_DIR)
+    if not ok:
+        console.print(f"[red]Falha: {err}[/red]")
+        raise SystemExit(1)
+    console.print("[green]Push concluído.[/green]")
+
+
+@sync.command("pull")
+@click.option("--remote", default=_DEFAULT_REMOTE, help="Nome do remote rclone.")
+def sync_pull_cmd(remote: str) -> None:
+    """Baixa .json do Drive para o local (aditivo)."""
+    cfg = _ensure_rclone(remote)
+    if cfg is None:
+        raise SystemExit(1)
+    console.print(f"[dim]Baixando {cfg.remote_uri} → {DEFAULT_SESSIONS_DIR}…[/dim]")
+    ok, err = sync_pull(cfg, DEFAULT_SESSIONS_DIR)
+    if not ok:
+        console.print(f"[red]Falha: {err}[/red]")
+        raise SystemExit(1)
+    console.print("[green]Pull concluído.[/green]")
 
 
 if __name__ == "__main__":  # pragma: no cover
