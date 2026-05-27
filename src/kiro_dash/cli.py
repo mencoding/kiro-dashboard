@@ -31,6 +31,7 @@ from kiro_dash.aggregator import (
     aggregate_by_session,
     aggregate_tools_in_window,
     balance_in_cycle,
+    filter_by_agent,
     resolve_window,
     total_credits,
     turns_in_last_days,
@@ -41,7 +42,9 @@ from kiro_dash.config import (
     VALID_TIERS,
     PlanConfig,
     default_config_path,
+    load_aliases,
     load_plan,
+    save_aliases,
     save_plan,
 )
 from kiro_dash.models import Session
@@ -174,12 +177,13 @@ def whoami() -> None:
     default=None,
     help="Dia em formato YYYY-MM-DD (default: hoje, local).",
 )
-def today(day_str: str | None) -> None:
+@click.option("--agent", default=None, help="Filtra por agent_name.")
+def today(day_str: str | None, agent: str | None) -> None:
     """Agregado de créditos do dia corrente."""
     d = date.fromisoformat(day_str) if day_str else datetime.now().astimezone().date()
 
     sessions = load_all_sessions()
-    pairs = turns_in_local_day(sessions, d)
+    pairs = filter_by_agent(turns_in_local_day(sessions, d), agent)
 
     if not pairs:
         console.print(f"[yellow]Nenhum turn registrado em {d.isoformat()} (local).[/yellow]")
@@ -207,7 +211,8 @@ def today(day_str: str | None) -> None:
 
     console.print(_aggregates_table("Por modelo", aggregate_by_model(pairs), "modelo"))
     console.print(_aggregates_table("Por agent", aggregate_by_agent(pairs), "agent"))
-    console.print(_aggregates_table("Por projeto", aggregate_by_project(pairs), "projeto"))
+    aliases = load_aliases(default_config_path())
+    console.print(_aggregates_table("Por projeto", aggregate_by_project(pairs, aliases=aliases), "projeto"))
     console.print(_aggregates_table("Por sessão", aggregate_by_session(pairs), "sessão"))
 
 
@@ -391,7 +396,8 @@ def now(refresh: float) -> None:
 )
 @click.option("--days", default=None, type=int, help="(legacy) override em dias.")
 @click.option("--limit", default=10, type=int, help="Top N (default 10).")
-def projects(window: str, days: int | None, limit: int) -> None:
+@click.option("--agent", default=None, help="Filtra por agent_name.")
+def projects(window: str, days: int | None, limit: int, agent: str | None) -> None:
     """Top projetos (heurística) por créditos numa janela nomeada ou em N dias."""
     sessions = load_all_sessions()
     plan_cfg = load_plan(default_config_path())
@@ -406,11 +412,13 @@ def projects(window: str, days: int | None, limit: int) -> None:
         console.print(f"[red]{exc}[/red]")
         raise SystemExit(2)
 
+    pairs = filter_by_agent(pairs, agent)
+
     if not pairs:
         console.print(f"[yellow]Sem turns na janela ({window_label}).[/yellow]")
         return
 
-    aggs = aggregate_by_project(pairs)[:limit]
+    aggs = aggregate_by_project(pairs, aliases=load_aliases(default_config_path()))[:limit]
     total = total_credits(pairs)
 
     header = Text()
@@ -431,7 +439,8 @@ def projects(window: str, days: int | None, limit: int) -> None:
 )
 @click.option("--days", default=None, type=int, help="(legacy) override em dias.")
 @click.option("--limit", default=10, type=int, help="Top N (default 10).")
-def models(window: str, days: int | None, limit: int) -> None:
+@click.option("--agent", default=None, help="Filtra por agent_name.")
+def models(window: str, days: int | None, limit: int, agent: str | None) -> None:
     """Top modelos por créditos numa janela nomeada ou em N dias."""
     sessions = load_all_sessions()
     plan_cfg = load_plan(default_config_path())
@@ -445,6 +454,8 @@ def models(window: str, days: int | None, limit: int) -> None:
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
         raise SystemExit(2)
+
+    pairs = filter_by_agent(pairs, agent)
 
     if not pairs:
         console.print(f"[yellow]Sem turns na janela ({window_label}).[/yellow]")
@@ -465,9 +476,12 @@ def models(window: str, days: int | None, limit: int) -> None:
 
 @main.command()
 @click.option("--limit", default=20, type=int, help="N últimas sessões (default 20).")
-def recent(limit: int) -> None:
+@click.option("--agent", default=None, help="Filtra por agent_name.")
+def recent(limit: int, agent: str | None) -> None:
     """Últimas N sessões ordenadas por updated_at desc, ativas marcadas com ●."""
     sessions = load_all_sessions()
+    if agent is not None:
+        sessions = [s for s in sessions if s.agent_name == agent]
     if not sessions:
         console.print("[yellow]Nenhuma sessão encontrada.[/yellow]")
         return
@@ -642,6 +656,53 @@ def plan_set(tier: str, credits_override: int | None, cycle_start_str: str | Non
     p = PlanConfig(tier=tier, monthly_credits=monthly, cycle_start=cycle)
     save_plan(p, default_config_path())
     console.print(f"[green]Plano salvo:[/green] {p.tier} ({p.monthly_credits} cr/mês), ciclo {p.cycle_start.isoformat()}")
+
+
+# ─── aliases ──────────────────────────────────────────────────────────────
+
+
+@main.group()
+def aliases() -> None:
+    """Gestão de aliases declarativos de projeto."""
+
+
+@aliases.command("get")
+def aliases_get() -> None:
+    """Lista aliases atuais."""
+    al = load_aliases(default_config_path())
+    if not al:
+        console.print("[dim]Nenhum alias declarado.[/dim]")
+        return
+    table = Table(title="Aliases", show_header=True)
+    table.add_column("path")
+    table.add_column("label")
+    for path, label in sorted(al.items()):
+        table.add_row(path, label)
+    console.print(table)
+
+
+@aliases.command("set")
+@click.argument("path")
+@click.argument("label")
+def aliases_set(path: str, label: str) -> None:
+    """Define alias ``path → label``. Sobrescreve se já existir."""
+    al = load_aliases(default_config_path())
+    al[path] = label
+    save_aliases(al, default_config_path())
+    console.print(f"[green]Alias salvo:[/green] {path} → {label}")
+
+
+@aliases.command("unset")
+@click.argument("path")
+def aliases_unset(path: str) -> None:
+    """Remove alias por path."""
+    al = load_aliases(default_config_path())
+    if path not in al:
+        console.print(f"[yellow]Alias não encontrado: {path}[/yellow]")
+        raise SystemExit(1)
+    del al[path]
+    save_aliases(al, default_config_path())
+    console.print(f"[green]Alias removido:[/green] {path}")
 
 
 # ─── balance ──────────────────────────────────────────────────────────────

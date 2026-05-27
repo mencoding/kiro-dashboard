@@ -112,6 +112,16 @@ def _aggregate_pairs(
     return out
 
 
+def filter_by_agent(
+    pairs: list[tuple[Session, Turn]],
+    agent: str | None,
+) -> list[tuple[Session, Turn]]:
+    """Filtra pares pelo ``agent_name`` da sessão. ``None`` passa tudo."""
+    if agent is None:
+        return pairs
+    return [(s, t) for (s, t) in pairs if s.agent_name == agent]
+
+
 def aggregate_by_model(pairs: list[tuple[Session, Turn]]) -> list[Aggregate]:
     """Agrega por ``model_id`` da sessão."""
     return _aggregate_pairs(pairs, key=lambda s, t: s.model_id)
@@ -127,11 +137,11 @@ def aggregate_by_cwd(pairs: list[tuple[Session, Turn]]) -> list[Aggregate]:
     return _aggregate_pairs(pairs, key=lambda s, t: s.cwd or "?")
 
 
-def aggregate_by_project(pairs: list[tuple[Session, Turn]]) -> list[Aggregate]:
-    """Agrega por ``project_label(s.cwd)`` (heurística — Frente G)."""
+def aggregate_by_project(pairs: list[tuple[Session, Turn]], *, aliases: dict[str, str] | None = None) -> list[Aggregate]:
+    """Agrega por ``project_label(s.cwd, aliases=aliases)``."""
     from kiro_dash.project import project_label
 
-    return _aggregate_pairs(pairs, key=lambda s, t: project_label(s.cwd))
+    return _aggregate_pairs(pairs, key=lambda s, t: project_label(s.cwd, aliases=aliases))
 
 
 def aggregate_by_session(pairs: list[tuple[Session, Turn]]) -> list[Aggregate]:

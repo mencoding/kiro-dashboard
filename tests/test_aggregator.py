@@ -114,3 +114,32 @@ def test_aggregate_by_project_consolida_subpastas_em_um_label(tmp_path):
     assert by_label["institucional/auto-normas"].credits == 3.0
     assert by_label["institucional/auto-normas"].sessions == 2
     assert by_label["pessoal/docente-ifsp"].credits == 4.0
+
+
+from kiro_dash.aggregator import filter_by_agent
+
+
+def test_filter_by_agent_isola_uma():
+    now = datetime.now(timezone.utc)
+    s_nyx = make_session(agent_name="nyx", turns=[make_turn(end_timestamp=now, credits=10)])
+    s_other = make_session(session_id="x", agent_name="kiro_default", turns=[make_turn(end_timestamp=now, credits=5)])
+    pairs = [(s, t) for s in (s_nyx, s_other) for t in s.turns]
+    out = filter_by_agent(pairs, "nyx")
+    assert len(out) == 1
+    assert out[0][0].agent_name == "nyx"
+
+
+def test_filter_by_agent_sem_match_devolve_vazio():
+    now = datetime.now(timezone.utc)
+    s = make_session(agent_name="nyx", turns=[make_turn(end_timestamp=now)])
+    pairs = [(s, t) for t in s.turns]
+    out = filter_by_agent(pairs, "inexistente")
+    assert out == []
+
+
+def test_filter_by_agent_none_passa_tudo():
+    now = datetime.now(timezone.utc)
+    s = make_session(agent_name="nyx", turns=[make_turn(end_timestamp=now)])
+    pairs = [(s, t) for t in s.turns]
+    out = filter_by_agent(pairs, None)
+    assert out == pairs

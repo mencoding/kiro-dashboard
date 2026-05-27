@@ -111,3 +111,40 @@ def test_cwd_vazio_retorna_interrogacao():
 
 def test_cwd_none_safe():
     assert project_label(None) == "?"  # type: ignore[arg-type]
+
+
+def test_alias_vence_heuristica(home):
+    cwd = str(home / "iris/projetos/institucional/auto-normas")
+    aliases = {str(home / "iris/projetos/institucional/auto-normas"): "auto-normas-custom"}
+    assert project_label(cwd, aliases=aliases) == "auto-normas-custom"
+
+
+def test_alias_match_por_prefixo(home):
+    cwd = str(home / "lab/exp-001/sub")
+    aliases = {str(home / "lab"): "experimentos"}
+    assert project_label(cwd, aliases=aliases) == "experimentos"
+
+
+def test_alias_mais_especifico_vence(home):
+    cwd = str(home / "lab/exp-001/data")
+    aliases = {
+        str(home / "lab"): "experimentos",
+        str(home / "lab/exp-001"): "exp-001",
+    }
+    assert project_label(cwd, aliases=aliases) == "exp-001"
+
+
+def test_alias_vazio_devolve_heuristica(home):
+    cwd = str(home / "nyx/memory")
+    assert project_label(cwd, aliases={}) == "nyx"
+    assert project_label(cwd, aliases=None) == "nyx"
+
+
+def test_home_puro_vira_home(home):
+    assert project_label(str(home)) == "home"
+
+
+def test_downloads_documents_desktop_fallback(home):
+    assert project_label(str(home / "Downloads")) == "home/Downloads"
+    assert project_label(str(home / "Documents/x")) == "home/Documents"
+    assert project_label(str(home / "Desktop")) == "home/Desktop"

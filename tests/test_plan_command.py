@@ -1,4 +1,4 @@
-"""Smoke dos subcomandos plan e balance."""
+"""Smoke dos subcomandos plan, balance e aliases."""
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
@@ -7,6 +7,7 @@ from unittest.mock import patch
 from click.testing import CliRunner
 
 from kiro_dash.cli import main
+from kiro_dash.config import load_aliases, save_aliases
 from tests.fixtures.sessions_synthetic import make_session, make_turn
 
 
@@ -89,3 +90,33 @@ def test_balance_warns_when_above_80_pct(tmp_path):
         result = runner.invoke(main, ["balance"])
     assert result.exit_code == 0
     assert "85" in result.output
+
+
+def test_aliases_get_lista_existentes(tmp_path):
+    cfg = tmp_path / "config.toml"
+    save_aliases({"/x": "alpha", "/y": "beta"}, cfg)
+    with patch("kiro_dash.cli.default_config_path", return_value=cfg):
+        runner = CliRunner()
+        result = runner.invoke(main, ["aliases", "get"])
+    assert result.exit_code == 0
+    assert "alpha" in result.output
+    assert "beta" in result.output
+
+
+def test_aliases_set_persiste(tmp_path):
+    cfg = tmp_path / "config.toml"
+    with patch("kiro_dash.cli.default_config_path", return_value=cfg):
+        runner = CliRunner()
+        result = runner.invoke(main, ["aliases", "set", "/srv/foo", "foo-projeto"])
+    assert result.exit_code == 0
+    assert load_aliases(cfg) == {"/srv/foo": "foo-projeto"}
+
+
+def test_aliases_unset_remove(tmp_path):
+    cfg = tmp_path / "config.toml"
+    save_aliases({"/x": "alpha", "/y": "beta"}, cfg)
+    with patch("kiro_dash.cli.default_config_path", return_value=cfg):
+        runner = CliRunner()
+        result = runner.invoke(main, ["aliases", "unset", "/x"])
+    assert result.exit_code == 0
+    assert load_aliases(cfg) == {"/y": "beta"}
