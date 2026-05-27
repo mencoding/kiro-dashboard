@@ -32,7 +32,7 @@ async def test_keys_switch_tabs():
 async def test_r_does_not_crash_on_each_tab():
     app = KiroDashApp()
     async with app.run_test() as pilot:
-        for tab_key in ("1", "2", "3", "4", "5", "6"):
+        for tab_key in ("1", "2", "3", "4", "5", "6", "7"):
             await pilot.press(tab_key)
             await pilot.pause()
             await pilot.press("r")
