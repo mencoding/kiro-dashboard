@@ -185,6 +185,17 @@ def today(day_str: str | None) -> None:
     header.append(f"{len(pairs)} turns em {n_sessions} sessões")
     console.print(Panel(header, title="Hoje", expand=False))
 
+    # Contexto do ciclo (plano + saldo)
+    p = load_plan(default_config_path())
+    bal = balance_in_cycle(sessions, p.cycle_start, monthly_credits=p.monthly_credits)
+    ctx_color = _balance_color(bal["pct_used"])
+    ctx = Text()
+    ctx.append(f"  Ciclo {p.tier}: ", style="dim")
+    ctx.append(f"{_fmt_credits(bal['consumed'])} / {bal['monthly_credits']} ", style=ctx_color)
+    ctx.append(f"({bal['pct_used']:.1f}%)", style=ctx_color)
+    console.print(ctx)
+    console.print()
+
     console.print(_aggregates_table("Por modelo", aggregate_by_model(pairs), "modelo"))
     console.print(_aggregates_table("Por agent", aggregate_by_agent(pairs), "agent"))
     console.print(_aggregates_table("Por projeto (cwd)", aggregate_by_cwd(pairs), "cwd"))
