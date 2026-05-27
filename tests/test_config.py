@@ -10,7 +10,9 @@ from kiro_dash.config import (
     DEFAULT_MONTHLY_CREDITS,
     PlanConfig,
     default_config_path,
+    load_aliases,
     load_plan,
+    save_aliases,
     save_plan,
 )
 
@@ -80,3 +82,33 @@ def test_save_plan_writes_valid_toml(tmp_path):
     assert 'tier = "power"' in content
     assert 'monthly_credits = 10000' in content
     assert 'cycle_start = 2026-06-15' in content or 'cycle_start = "2026-06-15"' in content
+
+
+def test_load_aliases_returns_empty_when_section_absent(tmp_path):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text("[plan]\ntier='free'\nmonthly_credits=50\ncycle_start='2026-05-01'\n")
+    aliases = load_aliases(cfg)
+    assert aliases == {}
+
+
+def test_load_aliases_roundtrip(tmp_path):
+    cfg = tmp_path / "config.toml"
+    save_aliases(
+        {"/srv/work/clientes/acme": "acme", "/home/foo/lab": "experimentos"},
+        cfg,
+    )
+    aliases = load_aliases(cfg)
+    assert aliases == {
+        "/srv/work/clientes/acme": "acme",
+        "/home/foo/lab": "experimentos",
+    }
+
+
+def test_load_aliases_preserves_plan_section(tmp_path):
+    cfg = tmp_path / "config.toml"
+    save_plan(PlanConfig("pro", 1000, date(2026, 5, 1)), cfg)
+    save_aliases({"/x": "y"}, cfg)
+    p = load_plan(cfg)
+    aliases = load_aliases(cfg)
+    assert p.tier == "pro"
+    assert aliases == {"/x": "y"}

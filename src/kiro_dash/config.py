@@ -92,3 +92,33 @@ def save_plan(plan: PlanConfig, path: Path | None = None) -> None:
     }
     with path.open("wb") as f:
         tomli_w.dump(data, f)
+
+
+def load_aliases(path: Path | None = None) -> dict[str, str]:
+    """Carrega seção ``[project_aliases]`` do config TOML.
+
+    Retorna ``{}`` quando arquivo não existe ou seção ausente.
+    """
+    p = path or default_config_path()
+    if not p.exists():
+        return {}
+    with open(p, "rb") as f:
+        data = tomllib.load(f)
+    section = data.get("project_aliases") or {}
+    return {str(k): str(v) for k, v in section.items()}
+
+
+def save_aliases(aliases: dict[str, str], path: Path | None = None) -> None:
+    """Grava ``aliases`` na seção ``[project_aliases]`` preservando outras seções."""
+    p = path or default_config_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+
+    existing: dict = {}
+    if p.exists():
+        with open(p, "rb") as f:
+            existing = tomllib.load(f)
+
+    existing["project_aliases"] = dict(aliases)
+
+    with open(p, "wb") as f:
+        tomli_w.dump(existing, f)
