@@ -569,6 +569,8 @@ def recent(limit: int, agent: str | None) -> None:
 @click.option("--limit", default=20, type=int, help="Top N tools (default 20).")
 def tools(hours: int, limit: int) -> None:
     """Breakdown de tool calls nas últimas N horas (lê .jsonl)."""
+    from kiro_dash.visual import bar_inline
+
     aggs = aggregate_tools_in_window(DEFAULT_SESSIONS_DIR, hours=hours)
     if not aggs:
         console.print(f"[yellow]Nenhuma tool call nas últimas {hours}h.[/yellow]")
@@ -588,11 +590,14 @@ def tools(hours: int, limit: int) -> None:
     table = Table(title="Tools", expand=False, header_style="bold")
     table.add_column("tool")
     table.add_column("count", justify="right")
+    table.add_column("share")
     table.add_column("sessões", justify="right")
     table.add_column("erros", justify="right")
     for a in aggs:
+        pct = a["count"] / total if total else 0
+        bar = f"{bar_inline(pct, width=15)} {pct*100:5.1f}%"
         err_cell = Text(str(a["errors"]), style="red") if a["errors"] else Text("0", style="dim")
-        table.add_row(a["name"], str(a["count"]), str(a["sessions"]), err_cell)
+        table.add_row(a["name"], str(a["count"]), bar, str(a["sessions"]), err_cell)
     console.print(table)
 
 
@@ -1091,6 +1096,68 @@ def tui() -> None:
     """Lança a TUI interativa (6 abas: now/today/projects/models/tools/session)."""
     from kiro_dash.views.app import run_app
     raise SystemExit(run_app())
+
+
+# ─── tool (drill-down) ────────────────────────────────────────────────────
+
+
+def collect_recent_tools(hours: int = 24) -> list:
+    """Tools de todas as sessões nas últimas N horas, ordenadas por session_id."""
+    import time as _t
+    cutoff = _t.time() - hours * 3600
+    out = []
+    for path in DEFAULT_SESSIONS_DIR.iterdir():
+        if not (path.is_file() and path.suffix == ".jsonl"):
+            continue
+        try:
+            if path.stat().st_mtime < cutoff:
+                continue
+        except OSError:
+            continue
+        out.extend(iter_tool_calls(path))
+    return out
+
+
+@main.command()
+@click.argument("name")
+@click.option("--hours", default=24, type=int, help="Janela em horas (default 24).")
+@click.option("--errors-only", is_flag=True, default=False, help="Só status=error.")
+@click.option("--tail", default=20, type=int, help="Últimas N chamadas (default 20).")
+@click.option("--show-input", is_flag=True, default=False,
+              help="Mostra values do input (debug pessoal).")
+def tool(name: str, hours: int, errors_only: bool, tail: int, show_input: bool) -> None:
+    """Drill-down de uma tool específica."""
+    calls = [t for t in collect_recent_tools(hours=hours) if t.name == name]
+    if errors_only:
+        calls = [t for t in calls if (t.status or "").lower() == "error"]
+    calls = calls[:tail]
+
+    if not calls:
+        console.print(f"[yellow]Nenhuma chamada de {name!r} nas últimas {hours}h"
+                      f"{' (filtro: errors-only)' if errors_only else ''}.[/yellow]")
+        return
+
+    n_errors = sum(1 for t in calls if (t.status or "").lower() == "error")
+    header = Text()
+    header.append(f"{name}  ", style="bold")
+    header.append(f"{len(calls)} chamadas  ", style="dim")
+    if n_errors:
+        header.append(f"{n_errors} erros", style="bold red")
+    console.print(Panel(header, title="Tool", expand=False))
+
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("status")
+    table.add_column("toolUseId")
+    table.add_column("input keys")
+    table.add_column("error / preview", overflow="fold")
+    for t in calls:
+        status_cell = Text(t.status or "?",
+                           style="red" if (t.status or "").lower() == "error" else "green")
+        keys_cell = ", ".join(t.input_keys) if t.input_keys else "—"
+        err_cell = Text(t.error_summary or "—",
+                        style="red" if t.error_summary else "dim")
+        table.add_row(status_cell, t.tool_use_id[:8], keys_cell, err_cell)
+    console.print(table)
 
 
 if __name__ == "__main__":  # pragma: no cover

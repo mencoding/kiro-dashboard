@@ -300,6 +300,24 @@ inconsistente. Use quando SIGTERM não responder.
   spawn-adas (subagents, MCPs). Para garantir, `kill -SIGKILL -PGID`
   pode ser melhor — não implementado por enquanto.
 
+## Drill-down de tools
+
+```bash
+kiro-dash tool shell                       # últimas 20 chamadas de shell
+kiro-dash tool write --errors-only         # só erros
+kiro-dash tool read --tail 5 --hours 6     # últimas 5 em 6h
+```
+
+Mostra: status, toolUseId, input keys (sem values), error summary
+(1ª linha do retorno quando status=error, capped 200 chars).
+
+Privacidade: `input.values` não são retidos pelo parser (Wave 1).
+`error_summary` é metadata operacional (FileNotFoundError, exit code,
+HTTP status), não vaza prompts.
+
+Na TUI, aba Tools (`5`): seleção de linha (↑/↓ + Enter) abre painel
+inferior com top 5 erros recentes.
+
 ## Licença
 
 Privado — uso pessoal de Leonardo Menzani.
