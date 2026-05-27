@@ -40,6 +40,8 @@ from kiro_dash.aggregator import (
     turns_in_last_days,
     turns_in_local_day,
 )
+from kiro_dash.backends import Capability
+from kiro_dash.backends.ide_state import IdeStateError
 from kiro_dash.config import (
     DEFAULT_MONTHLY_CREDITS,
     VALID_TIERS,
@@ -50,7 +52,18 @@ from kiro_dash.config import (
     save_aliases,
     save_plan,
 )
+from kiro_dash.freshness import (
+    FreshnessLevel,
+    format_age,
+    freshness_for,
+    freshness_message,
+)
 from kiro_dash.models import Session
+from kiro_dash.onboarding import (
+    format_ide_banner_text,
+    mark_ide_banner_shown,
+    should_show_ide_banner,
+)
 from kiro_dash.parser import (
     DEFAULT_SESSIONS_DIR,
     discover_sessions,
@@ -74,6 +87,7 @@ from kiro_dash.watchdog import (
 )
 from kiro_dash.jsonl_parser import iter_tool_calls
 from kiro_dash.snapshots import ensure_snapshots_up_to, write_snapshot
+from kiro_dash.sources import Sources
 
 console = Console()
 
@@ -214,6 +228,16 @@ def whoami() -> None:
     if info.is_enterprise:
         title += " (enterprise)"
     console.print(Panel(table, title=title, expand=False))
+
+    # Painel de fontes detectadas (Wave 6 — ADR-0001)
+    sources = Sources.detect()
+    sources_table = Table(show_header=False, box=None, padding=(0, 1))
+    sources_table.add_column(style="dim")
+    for line in sources.summary_lines():
+        sources_table.add_row(line)
+    console.print(
+        Panel(sources_table, title="Fontes detectadas", expand=False)
+    )
 
 
 def _render_snapshot(snap: dict, *, agent: str | None = None) -> None:
@@ -845,7 +869,7 @@ def plan() -> None:
 
 @plan.command("get")
 def plan_get() -> None:
-    """Mostra o plano atual."""
+    """Mostra o plano atual; inclui dados autoritativos do IDE quando disponíveis."""
     p = load_plan(default_config_path())
     table = Table(show_header=False, box=None, padding=(0, 1))
     table.add_column(style="dim")
@@ -854,6 +878,40 @@ def plan_get() -> None:
     table.add_row("Créditos mensais", str(p.monthly_credits))
     table.add_row("Ciclo iniciado", p.cycle_start.isoformat())
     table.add_row("Config", str(default_config_path()))
+
+    # Auto-detect via IDE
+    sources = Sources.detect()
+    if sources.ide_state is not None:
+        try:
+            state = sources.ide_state.read_usage_state()
+        except IdeStateError:
+            state = None
+        if state is not None:
+            age = state.age_seconds
+            level = freshness_for(age)
+            table.add_row("", "")  # separador visual
+            table.add_row(
+                "Limite servidor (IDE)",
+                f"{state.usage_limit:.0f} {state.unit.lower()}",
+            )
+            if state.overage_cap > 0:
+                table.add_row(
+                    "Overage cap",
+                    f"{state.overage_cap:.0f} @ "
+                    f"{state.currency_symbol}{state.overage_rate:.2f}/{state.unit.lower()}",
+                )
+            table.add_row(
+                "Reset em",
+                state.reset_date.date().isoformat(),
+            )
+            table.add_row(
+                "Frescor (IDE)",
+                Text(
+                    f"{format_age(age)} atrás · {level.value}",
+                    style=_freshness_color(level),
+                ),
+            )
+
     console.print(Panel(table, title="Plano", expand=False))
 
 
@@ -945,9 +1003,84 @@ def _balance_color(pct: float) -> str:
     return "green"
 
 
-@main.command()
-def balance() -> None:
-    """Saldo estimado do ciclo corrente."""
+def _freshness_color(level: FreshnessLevel) -> str:
+    """Mapeia FreshnessLevel para cor rich."""
+    return level.value
+
+
+def _render_balance_from_ide(state, *, sources_summary_hint: bool) -> None:
+    """Renderiza saldo autoritativo lido do IDE."""
+    age = state.age_seconds
+    level = freshness_for(age)
+    pct = state.percentage_used
+    color = _balance_color(pct)
+
+    bar = Text()
+    used_blocks = min(20, int(pct / 5))
+    bar.append("█" * used_blocks, style=color)
+    bar.append("░" * (20 - used_blocks), style="dim")
+
+    table = Table(show_header=False, box=None, padding=(0, 1))
+    table.add_column(style="dim")
+    table.add_column()
+    table.add_row(
+        "Consumo",
+        f"{state.current_usage:.2f} / {state.usage_limit:.0f} {state.unit.lower()}",
+    )
+    table.add_row(
+        "Restante",
+        f"{state.usage_limit - state.current_usage:.2f}",
+    )
+    table.add_row("Uso", Text(f"{pct:.2f}%", style=color))
+    table.add_row("Barra", bar)
+
+    # Reset
+    days_to_reset = (state.reset_date - datetime.now(timezone.utc)).days
+    reset_iso = state.reset_date.date().isoformat()
+    if days_to_reset >= 0:
+        table.add_row("Reset em", f"{reset_iso} ({days_to_reset}d)")
+    else:
+        table.add_row("Reset em", reset_iso)
+
+    # Overage
+    if state.current_overages > 0:
+        table.add_row(
+            "Overage",
+            Text(
+                f"{state.current_overages:.2f} acima · charges "
+                f"{state.currency_symbol}{state.overage_charges:.2f}",
+                style="red",
+            ),
+        )
+    if state.overage_rate > 0:
+        table.add_row(
+            "Overage rate",
+            f"{state.currency_symbol}{state.overage_rate:.2f} / {state.unit.lower()}"
+            f" (cap {state.overage_cap:.0f})",
+        )
+
+    # Frescor
+    age_text = format_age(age)
+    table.add_row("Fonte", "ide (state.vscdb)")
+    table.add_row(
+        "Frescor",
+        Text(f"{age_text} atrás · {level.value}", style=_freshness_color(level)),
+    )
+    msg = freshness_message(level, age)
+    if msg:
+        table.add_row("Aviso", Text(msg, style=_freshness_color(level)))
+
+    title = "Saldo do ciclo (autoritativo)"
+    if pct >= 95:
+        title += " — ⚠️ próximo do limite"
+    elif pct >= 80:
+        title += " — atenção"
+
+    console.print(Panel(table, title=title, expand=False))
+
+
+def _render_balance_from_local_estimate() -> None:
+    """Renderiza estimativa local (comportamento pré-Wave 6)."""
     p = load_plan(default_config_path())
     sessions = load_all_sessions()
     bal = balance_in_cycle(sessions, p.cycle_start, monthly_credits=p.monthly_credits)
@@ -972,14 +1105,56 @@ def balance() -> None:
     table.add_row("Barra", bar)
     table.add_row("Turns no ciclo", str(bal["turns"]))
     table.add_row("Sessões no ciclo", str(bal["sessions"]))
+    table.add_row("Fonte", "estimativa local (cli)")
 
-    title = "Saldo do ciclo"
+    title = "Saldo do ciclo (estimativa)"
     if bal["pct_used"] >= 95:
         title += " — ⚠️ próximo do limite"
     elif bal["pct_used"] >= 80:
         title += " — atenção"
 
     console.print(Panel(table, title=title, expand=False))
+
+
+@main.command()
+@click.option(
+    "--no-ide",
+    is_flag=True,
+    default=False,
+    help="Ignora billing autoritativo do IDE; força estimativa local.",
+)
+def balance(no_ide: bool) -> None:
+    """Saldo do ciclo corrente.
+
+    Quando o Kiro IDE está instalado e foi aberto recentemente, lê o
+    billing autoritativo do servidor via ``state.vscdb``. Caso contrário,
+    cai para estimativa local baseada no plano declarado (``plan set``).
+    """
+    sources = Sources.detect()
+    used_ide = False
+
+    if not no_ide and sources.ide_state is not None:
+        try:
+            state = sources.ide_state.read_usage_state()
+        except IdeStateError as e:
+            console.print(
+                f"[yellow]IDE_STATE_SCHEMA_UNKNOWN:[/yellow] "
+                f"schema do `kiro.kiroAgent` não reconhecido ({e}). "
+                f"Caindo em estimativa local."
+            )
+            state = None
+
+        if state is not None:
+            _render_balance_from_ide(state, sources_summary_hint=False)
+            used_ide = True
+
+    if not used_ide:
+        _render_balance_from_local_estimate()
+        # Banner apenas quando estamos em estimativa local
+        if should_show_ide_banner(has_only_cli=sources.has_only_cli()):
+            console.print()
+            console.print(format_ide_banner_text())
+            mark_ide_banner_shown()
 
 
 # ─── audit (watchdog) ─────────────────────────────────────────────────────

@@ -1,0 +1,28 @@
+{
+  "hasBeenInstalled": true,
+  "kiro.resourceNotifications.usageState": {
+    "usageBreakdowns": [
+      {
+        "currency": {
+          "code": "USD",
+          "symbol": "$"
+        },
+        "currentOverages": 0,
+        "currentUsage": 100.0,
+        "displayName": "Credit",
+        "displayNamePlural": "Credits",
+        "percentageUsed": 10.0,
+        "overageCap": 10000,
+        "overageCharges": 0,
+        "overageRate": 0.04,
+        "resetDate": "2026-06-01T00:00:00.000Z",
+        "type": "CREDIT",
+        "unit": "INVOCATIONS",
+        "usageLimit": 1000
+      }
+    ],
+    "timestamp": 1779900000000
+  },
+  "kiro.coach.shown.autopilot": true,
+  "kiro.coach.shown.policy": true
+}

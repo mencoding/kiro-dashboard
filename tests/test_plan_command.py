@@ -71,7 +71,7 @@ def test_balance_shows_consumption_below_threshold(tmp_path):
     with patch("kiro_dash.cli.default_config_path", return_value=cfg_path), \
          patch("kiro_dash.cli.load_all_sessions", return_value=_fake_sessions_with_credits(500.0)):
         runner = CliRunner()
-        result = runner.invoke(main, ["balance"])
+        result = runner.invoke(main, ["balance", "--no-ide"])
     assert result.exit_code == 0
     assert "500" in result.output
     assert "1500" in result.output
@@ -87,7 +87,7 @@ def test_balance_warns_when_above_80_pct(tmp_path):
     with patch("kiro_dash.cli.default_config_path", return_value=cfg_path), \
          patch("kiro_dash.cli.load_all_sessions", return_value=_fake_sessions_with_credits(850.0)):
         runner = CliRunner()
-        result = runner.invoke(main, ["balance"])
+        result = runner.invoke(main, ["balance", "--no-ide"])
     assert result.exit_code == 0
     assert "85" in result.output
 

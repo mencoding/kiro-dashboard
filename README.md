@@ -161,6 +161,7 @@ kiro-dash plan get
 kiro-dash plan set pro+              # 2000 cr/mês (default da tier)
 kiro-dash plan set pro --credits 1500 --cycle-start 2026-05-15
 kiro-dash balance                    # saldo do ciclo corrente
+kiro-dash balance --no-ide           # força estimativa local (ignora IDE)
 ```
 
 Tiers reconhecidas: `free` (50), `pro` (1000), `pro+` (2000), `power`
@@ -168,9 +169,39 @@ Tiers reconhecidas: `free` (50), `pro` (1000), `pro+` (2000), `power`
 de 80%, vermelho a partir de 95%. Config persiste em
 `~/.config/kiro-dash/config.toml`.
 
-> Saldo é estimativa local. Sem `kiro-dash sync` ativo, consumo real
-> cross-device pode ser maior. Dashboard web (`kiro-cli dashboard`) é a
-> fonte autoritativa.
+#### Saldo autoritativo via Kiro IDE (v0.7.0+)
+
+Quando o **Kiro IDE** está instalado e foi aberto recentemente,
+`balance` lê o billing autoritativo do servidor diretamente do
+`state.vscdb` do IDE — sem estimativa, sem heurística. O IDE faz
+fetch periódico do servidor enquanto está aberto, refletindo consumo
+**global da conta** (CLI + IDE + Web) e não apenas o que rodou
+localmente.
+
+Quando o IDE **não está instalado ou nunca foi aberto**, `balance`
+cai para estimativa local baseada no plano declarado via `plan set`,
+exibindo a mesma saída pré-v0.7.0. Um banner sugere a instalação
+(suprimível com `KIRO_DASH_NO_BANNER=1`).
+
+`plan get` também exibe os limites observados pelo servidor quando o
+IDE está disponível: `usageLimit`, `overageCap`, `overageRate` e data
+de reset. Os valores manuais de `plan set` continuam sendo
+respeitados — a leitura do IDE é **informativa**, não sobrescreve
+config local.
+
+**Política de frescor.** O snapshot do `state.vscdb` carrega um
+timestamp; quando ele envelhece, a UI mostra um badge:
+
+| Idade | Cor | Mensagem |
+|---|---|---|
+| < 3 h | verde | (nenhuma) |
+| 3 h – 12 h | amarelo | `snapshot de Xh atrás` |
+| 12 h – 24 h | vermelho | `snapshot de Xh atrás — abra o Kiro IDE para refresh` |
+| ≥ 24 h | cinza | `snapshot stale (Xd) — saldo pode estar muito desatualizado` |
+
+Para refrescar, basta abrir o Kiro IDE — o cache é atualizado em
+background a cada ~30-60 segundos enquanto rodando. Detalhes de
+arquitetura: [`docs/adr/0001-multi-backend-architecture.md`](docs/adr/0001-multi-backend-architecture.md).
 
 ### Histórico
 
@@ -276,6 +307,17 @@ Aliases têm prioridade sobre a heurística — match por prefixo, mais
 específico vence. Persistido em `~/.config/kiro-dash/config.toml`,
 seção `[project_aliases]`.
 
+**Variáveis de ambiente:**
+
+| Var | Default | Propósito |
+|---|---|---|
+| `KIRO_DASH_NO_CACHE` | unset | bypass do cache do parser para uma execução |
+| `KIRO_DASH_IDE_STATE_PATH` | `~/.config/Kiro/User/globalStorage/state.vscdb` | override do path do `state.vscdb` do IDE |
+| `KIRO_DASH_NO_IDE_STATE` | unset | desabilita leitura do billing IDE (testes/debug) |
+| `KIRO_DASH_NO_BANNER` | unset | suprime banner de onboarding sugerindo Kiro IDE |
+| `XDG_CONFIG_HOME` | `~/.config` | padrão XDG; muda raiz do `kiro-dash/config.toml` |
+| `XDG_CACHE_HOME` | `~/.cache` | padrão XDG; muda raiz do cache e do `banner_state.json` |
+
 ---
 
 ## TUI interativa
@@ -355,6 +397,7 @@ métricas durante a conversa, sem precisar abrir terminal.
 | `account_info` | Conta, profile ARN, billing tier |
 | `top_projects(days, limit)` | Top projetos por créditos |
 | `top_models(days, limit)` | Top modelos por créditos |
+| `usage_state` | Billing autoritativo do servidor via Kiro IDE (Wave 6) |
 
 **Registro no Kiro CLI** (em `~/.kiro/agents/<seu-agent>.json`):
 

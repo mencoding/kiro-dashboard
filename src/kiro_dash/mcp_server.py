@@ -22,11 +22,15 @@ from kiro_dash.aggregator import (
     turns_in_last_days,
     turns_in_local_day,
 )
+from kiro_dash.backends import Capability
+from kiro_dash.backends.ide_state import IdeStateError
+from kiro_dash.freshness import freshness_for
 from kiro_dash.parser import (
     find_session_by_prefix,
     load_all_sessions,
     load_session_file,
 )
+from kiro_dash.sources import Sources
 
 
 def _agg_to_dict(a: Aggregate) -> dict:
@@ -146,6 +150,66 @@ def tool_account_info() -> dict:
     }
 
 
+def tool_usage_state() -> dict:
+    """Billing autoritativo do servidor Kiro via Kiro IDE (Wave 6).
+
+    Lê ``kiro.kiroAgent.usageState`` do ``state.vscdb`` do IDE. Retorna
+    ``{"available": False, "error": "..."}`` se o IDE não está instalado
+    ou se o schema não é reconhecido.
+    """
+    sources = Sources.detect()
+    backends = sources.available_for(Capability.USAGE_STATE)
+    if not backends:
+        return {
+            "available": False,
+            "error": "IDE_STATE_UNAVAILABLE",
+            "hint": (
+                "Kiro IDE não detectado. Instale https://kiro.dev/downloads/ "
+                "e abra-o pelo menos uma vez para refresh."
+            ),
+        }
+
+    backend = backends[0]
+    try:
+        state = backend.read_usage_state()  # type: ignore[attr-defined]
+    except IdeStateError as e:
+        return {
+            "available": False,
+            "error": "IDE_STATE_SCHEMA_UNKNOWN",
+            "detail": str(e),
+        }
+
+    if state is None:
+        return {
+            "available": False,
+            "error": "IDE_STATE_UNAVAILABLE",
+            "hint": "state.vscdb sem chave kiro.kiroAgent",
+        }
+
+    age = state.age_seconds
+    level = freshness_for(age)
+    return {
+        "available": True,
+        "source": "ide",
+        "current_usage": round(state.current_usage, 6),
+        "usage_limit": state.usage_limit,
+        "percentage_used": round(state.percentage_used, 6),
+        "current_overages": state.current_overages,
+        "overage_cap": state.overage_cap,
+        "overage_charges": state.overage_charges,
+        "overage_rate": state.overage_rate,
+        "reset_date": state.reset_date.isoformat(),
+        "currency_code": state.currency_code,
+        "currency_symbol": state.currency_symbol,
+        "unit": state.unit,
+        "type": state.type,
+        "timestamp": state.timestamp.isoformat(),
+        "data_age_seconds": round(age, 3),
+        "freshness_level": level.value,
+        "schema_version_observed": state.schema_version_observed,
+    }
+
+
 def main() -> int:
     """Entry point: sobe o servidor MCP stdio."""
     asyncio.run(_serve())
@@ -206,6 +270,16 @@ async def _serve() -> None:
                 },
             },
         ),
+        Tool(
+            name="usage_state",
+            description=(
+                "Billing autoritativo do servidor Kiro via Kiro IDE: "
+                "saldo, limite, overage, reset, frescor. Disponível "
+                "apenas se Kiro IDE estiver instalado e tiver sido aberto "
+                "pelo menos uma vez."
+            ),
+            inputSchema={"type": "object", "properties": {}},
+        ),
     ]
 
     @app.list_tools()
@@ -232,6 +306,8 @@ async def _serve() -> None:
                 days=int(arguments.get("days", 7)),
                 limit=int(arguments.get("limit", 10)),
             )
+        elif name == "usage_state":
+            payload = tool_usage_state()
         else:
             payload = {"error": f"unknown tool: {name}"}
         return [TextContent(type="text", text=json.dumps(payload, ensure_ascii=False))]
