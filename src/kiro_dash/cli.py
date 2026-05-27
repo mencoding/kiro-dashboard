@@ -31,6 +31,7 @@ from kiro_dash.aggregator import (
     aggregate_by_session,
     aggregate_tools_in_window,
     balance_in_cycle,
+    filter_by_agent,
     resolve_window,
     total_credits,
     turns_in_last_days,
@@ -176,12 +177,13 @@ def whoami() -> None:
     default=None,
     help="Dia em formato YYYY-MM-DD (default: hoje, local).",
 )
-def today(day_str: str | None) -> None:
+@click.option("--agent", default=None, help="Filtra por agent_name.")
+def today(day_str: str | None, agent: str | None) -> None:
     """Agregado de créditos do dia corrente."""
     d = date.fromisoformat(day_str) if day_str else datetime.now().astimezone().date()
 
     sessions = load_all_sessions()
-    pairs = turns_in_local_day(sessions, d)
+    pairs = filter_by_agent(turns_in_local_day(sessions, d), agent)
 
     if not pairs:
         console.print(f"[yellow]Nenhum turn registrado em {d.isoformat()} (local).[/yellow]")
@@ -394,7 +396,8 @@ def now(refresh: float) -> None:
 )
 @click.option("--days", default=None, type=int, help="(legacy) override em dias.")
 @click.option("--limit", default=10, type=int, help="Top N (default 10).")
-def projects(window: str, days: int | None, limit: int) -> None:
+@click.option("--agent", default=None, help="Filtra por agent_name.")
+def projects(window: str, days: int | None, limit: int, agent: str | None) -> None:
     """Top projetos (heurística) por créditos numa janela nomeada ou em N dias."""
     sessions = load_all_sessions()
     plan_cfg = load_plan(default_config_path())
@@ -408,6 +411,8 @@ def projects(window: str, days: int | None, limit: int) -> None:
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
         raise SystemExit(2)
+
+    pairs = filter_by_agent(pairs, agent)
 
     if not pairs:
         console.print(f"[yellow]Sem turns na janela ({window_label}).[/yellow]")
@@ -434,7 +439,8 @@ def projects(window: str, days: int | None, limit: int) -> None:
 )
 @click.option("--days", default=None, type=int, help="(legacy) override em dias.")
 @click.option("--limit", default=10, type=int, help="Top N (default 10).")
-def models(window: str, days: int | None, limit: int) -> None:
+@click.option("--agent", default=None, help="Filtra por agent_name.")
+def models(window: str, days: int | None, limit: int, agent: str | None) -> None:
     """Top modelos por créditos numa janela nomeada ou em N dias."""
     sessions = load_all_sessions()
     plan_cfg = load_plan(default_config_path())
@@ -448,6 +454,8 @@ def models(window: str, days: int | None, limit: int) -> None:
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
         raise SystemExit(2)
+
+    pairs = filter_by_agent(pairs, agent)
 
     if not pairs:
         console.print(f"[yellow]Sem turns na janela ({window_label}).[/yellow]")
@@ -468,9 +476,12 @@ def models(window: str, days: int | None, limit: int) -> None:
 
 @main.command()
 @click.option("--limit", default=20, type=int, help="N últimas sessões (default 20).")
-def recent(limit: int) -> None:
+@click.option("--agent", default=None, help="Filtra por agent_name.")
+def recent(limit: int, agent: str | None) -> None:
     """Últimas N sessões ordenadas por updated_at desc, ativas marcadas com ●."""
     sessions = load_all_sessions()
+    if agent is not None:
+        sessions = [s for s in sessions if s.agent_name == agent]
     if not sessions:
         console.print("[yellow]Nenhuma sessão encontrada.[/yellow]")
         return

@@ -107,3 +107,32 @@ def test_projects_window_invalid_returns_error():
         result = runner.invoke(main, ["projects", "--window", "ontem"])
     assert result.exit_code != 0
     assert "window" in result.output.lower()
+
+
+def test_today_filter_by_agent_nao_quebra():
+    with patch("kiro_dash.cli.load_all_sessions", return_value=_fake_sessions()):
+        runner = CliRunner()
+        result = runner.invoke(main, ["today", "--agent", "kiro_default"])
+    assert result.exit_code == 0
+
+
+def test_projects_filter_by_agent_nao_quebra():
+    with patch("kiro_dash.cli.load_all_sessions", return_value=_fake_sessions()):
+        runner = CliRunner()
+        result = runner.invoke(main, ["projects", "--agent", "kiro_default"])
+    assert result.exit_code == 0
+
+
+def test_models_filter_by_agent_inexistente_mostra_vazio():
+    with patch("kiro_dash.cli.load_all_sessions", return_value=_fake_sessions()):
+        runner = CliRunner()
+        result = runner.invoke(main, ["models", "--agent", "inexistente"])
+    assert result.exit_code == 0
+    assert "sem turns" in result.output.lower() or "Sem turns" in result.output
+
+
+def test_recent_filter_by_agent():
+    with patch("kiro_dash.cli.load_all_sessions", return_value=_fake_sessions()):
+        runner = CliRunner()
+        result = runner.invoke(main, ["recent", "--agent", "kiro_default"])
+    assert result.exit_code == 0

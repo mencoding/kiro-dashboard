@@ -112,6 +112,16 @@ def _aggregate_pairs(
     return out
 
 
+def filter_by_agent(
+    pairs: list[tuple[Session, Turn]],
+    agent: str | None,
+) -> list[tuple[Session, Turn]]:
+    """Filtra pares pelo ``agent_name`` da sessão. ``None`` passa tudo."""
+    if agent is None:
+        return pairs
+    return [(s, t) for (s, t) in pairs if s.agent_name == agent]
+
+
 def aggregate_by_model(pairs: list[tuple[Session, Turn]]) -> list[Aggregate]:
     """Agrega por ``model_id`` da sessão."""
     return _aggregate_pairs(pairs, key=lambda s, t: s.model_id)
