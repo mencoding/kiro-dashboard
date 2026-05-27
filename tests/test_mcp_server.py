@@ -16,29 +16,17 @@ from tests.fixtures.sessions_synthetic import make_session, make_turn
 
 
 def _fake_sessions():
-    """Fixture timezone-safe: usa offsets curtos pra nunca cruzar dia local.
-
-    Antes usávamos ``datetime.now(timezone.utc) - timedelta(hours=2)``, mas
-    quando o relógio cruza meia-noite UTC e o fuso local ainda está em
-    "ontem", o turn de 2h atrás cai em "ontem local" e some de
-    ``turns_in_local_day``.
-
-    Estratégia: ancorar em ``now`` UTC e usar deltas de minutos (≤30min).
-    Em fusos sãos (UTC-12 a UTC+14) qualquer ponto a menos de 30 minutos
-    do agora cai no mesmo dia local — isso vale tanto para ``today`` quanto
-    para janelas maiores (last_days, etc.).
-    """
-    now = datetime.now(timezone.utc)
+    """Fixture totalmente determinística — usa FAKE_NOW como referência."""
     return [
         make_session(
             session_id="aaaa1111-1111-1111-1111-111111111111",
             cwd="/proj/alfa",
             model_id="claude-opus-4.7",
             is_active=True,
-            updated_at=now - timedelta(minutes=1),
+            updated_at=FAKE_NOW - timedelta(minutes=1),
             turns=[
-                make_turn(end_timestamp=now - timedelta(minutes=5), credits=3.0),
-                make_turn(end_timestamp=now - timedelta(minutes=1), credits=2.0),
+                make_turn(end_timestamp=FAKE_NOW - timedelta(minutes=5), credits=3.0),
+                make_turn(end_timestamp=FAKE_NOW - timedelta(minutes=1), credits=2.0),
             ],
         ),
         make_session(
@@ -46,15 +34,19 @@ def _fake_sessions():
             cwd="/proj/beta",
             model_id="auto",
             is_active=False,
-            updated_at=now - timedelta(minutes=20),
-            turns=[make_turn(end_timestamp=now - timedelta(minutes=20), credits=1.5)],
+            updated_at=FAKE_NOW - timedelta(minutes=20),
+            turns=[make_turn(end_timestamp=FAKE_NOW - timedelta(minutes=20), credits=1.5)],
         ),
     ]
 
 
+# Constante determinística — meio-dia local (UTC-3 → 15:00 UTC)
+FAKE_NOW = datetime(2026, 5, 16, 15, 0, tzinfo=timezone.utc)
+
+
 def test_today_summary_aggregates_local_day():
     with patch("kiro_dash.mcp_server.load_all_sessions", return_value=_fake_sessions()):
-        out = tool_today_summary()
+        out = tool_today_summary(now=FAKE_NOW)
     assert out["total_credits"] == 6.5
     assert out["total_turns"] == 3
     assert out["total_sessions"] == 2
@@ -91,7 +83,7 @@ def test_session_details_unknown_prefix():
 
 def test_top_projects():
     with patch("kiro_dash.mcp_server.load_all_sessions", return_value=_fake_sessions()):
-        out = tool_top_projects(days=7, limit=10)
+        out = tool_top_projects(days=7, limit=10, now=FAKE_NOW)
     assert isinstance(out, list)
     cwds = {a["label"] for a in out}
     assert "/proj/alfa" in cwds
@@ -100,7 +92,7 @@ def test_top_projects():
 
 def test_top_models():
     with patch("kiro_dash.mcp_server.load_all_sessions", return_value=_fake_sessions()):
-        out = tool_top_models(days=7, limit=10)
+        out = tool_top_models(days=7, limit=10, now=FAKE_NOW)
     labels = {a["label"] for a in out}
     assert "claude-opus-4.7" in labels
 

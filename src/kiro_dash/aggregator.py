@@ -37,16 +37,23 @@ def _local_day_bounds(d: date) -> tuple[datetime, datetime]:
     return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
 
 
+def _resolve_now(now: datetime | None) -> datetime:
+    """Retorna ``now`` se passado, senão ``datetime.now(timezone.utc)``."""
+    return now if now is not None else datetime.now(timezone.utc)
+
+
 def turns_in_local_day(
     sessions: list[Session],
     d: date | None = None,
+    *,
+    now: datetime | None = None,
 ) -> list[tuple[Session, Turn]]:
     """Retorna pares ``(sessão, turn)`` cujo turn ocorreu no dia ``d`` local.
 
-    ``d`` default = hoje (local).
+    ``d`` default = hoje (local), derivado de ``now``.
     """
     if d is None:
-        d = datetime.now().astimezone().date()
+        d = _resolve_now(now).astimezone().date()
     start_utc, end_utc = _local_day_bounds(d)
 
     out: list[tuple[Session, Turn]] = []
@@ -59,6 +66,8 @@ def turns_in_local_day(
 def turns_in_last_days(
     sessions: list[Session],
     days: int,
+    *,
+    now: datetime | None = None,
 ) -> list[tuple[Session, Turn]]:
     """Retorna pares (sessão, turn) cujo end_timestamp caiu nos últimos N dias.
 
@@ -67,13 +76,13 @@ def turns_in_last_days(
     """
     if days <= 0:
         return []
-    now = datetime.now(timezone.utc)
-    cutoff = now - timedelta(days=days)
+    n = _resolve_now(now)
+    cutoff = n - timedelta(days=days)
 
     out: list[tuple[Session, Turn]] = []
     for s in sessions:
         for t in s.turns:
-            if cutoff <= t.end_timestamp <= now:
+            if cutoff <= t.end_timestamp <= n:
                 out.append((s, t))
     return out
 
@@ -232,8 +241,11 @@ def active_sessions(sessions: list[Session]) -> list[Session]:
 def turns_in_cycle(
     sessions: list[Session],
     cycle_start: date,
+    *,
+    now: datetime | None = None,
 ) -> list[tuple[Session, Turn]]:
     """Pares (sessão, turn) com end_timestamp >= cycle_start (UTC)."""
+    n = _resolve_now(now)
     tz_local = datetime.now().astimezone().tzinfo
     start_local = datetime.combine(cycle_start, time.min, tzinfo=tz_local)
     start_utc = start_local.astimezone(timezone.utc)
@@ -241,7 +253,7 @@ def turns_in_cycle(
     out: list[tuple[Session, Turn]] = []
     for s in sessions:
         for t in s.turns:
-            if t.end_timestamp >= start_utc:
+            if start_utc <= t.end_timestamp <= n:
                 out.append((s, t))
     return out
 
@@ -251,6 +263,7 @@ def resolve_window(
     window: str,
     *,
     cycle_start: date,
+    now: datetime | None = None,
 ) -> list[tuple[Session, Turn]]:
     """Resolve uma janela nomeada para pares (sessão, turn).
 
@@ -258,13 +271,13 @@ def resolve_window(
     """
     w = window.strip().lower()
     if w == "today":
-        return turns_in_local_day(sessions)
+        return turns_in_local_day(sessions, now=now)
     if w == "week":
-        return turns_in_last_days(sessions, days=7)
+        return turns_in_last_days(sessions, days=7, now=now)
     if w == "month":
-        return turns_in_last_days(sessions, days=30)
+        return turns_in_last_days(sessions, days=30, now=now)
     if w == "cycle":
-        return turns_in_cycle(sessions, cycle_start)
+        return turns_in_cycle(sessions, cycle_start, now=now)
     if w == "all":
         return [(s, t) for s in sessions for t in s.turns]
     try:
@@ -275,7 +288,7 @@ def resolve_window(
         ) from exc
     if n < 0:
         raise ValueError(f"window negativo: {n}")
-    return turns_in_last_days(sessions, days=n)
+    return turns_in_last_days(sessions, days=n, now=now)
 
 
 def balance_in_cycle(
@@ -283,9 +296,10 @@ def balance_in_cycle(
     cycle_start: date,
     *,
     monthly_credits: int,
+    now: datetime | None = None,
 ) -> dict:
     """Calcula saldo do ciclo: consumed / remaining / pct_used."""
-    pairs = turns_in_cycle(sessions, cycle_start)
+    pairs = turns_in_cycle(sessions, cycle_start, now=now)
     consumed = sum(t.credits for _, t in pairs)
     remaining = monthly_credits - consumed
     pct = (consumed / monthly_credits * 100.0) if monthly_credits > 0 else 0.0

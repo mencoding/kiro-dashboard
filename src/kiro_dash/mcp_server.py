@@ -40,11 +40,12 @@ def _agg_to_dict(a: Aggregate) -> dict:
     }
 
 
-def tool_today_summary() -> dict:
+def tool_today_summary(*, now: datetime | None = None) -> dict:
     sessions = load_all_sessions()
-    pairs = turns_in_local_day(sessions)
+    pairs = turns_in_local_day(sessions, now=now)
+    n = now if now is not None else datetime.now(timezone.utc)
     return {
-        "date": datetime.now().astimezone().date().isoformat(),
+        "date": n.astimezone().date().isoformat(),
         "total_credits": round(total_credits(pairs), 6),
         "total_turns": len(pairs),
         "total_sessions": len({s.session_id for s, _ in pairs}),
@@ -115,15 +116,15 @@ def tool_session_details(session_id_prefix: str) -> dict | None:
     }
 
 
-def tool_top_projects(days: int = 7, limit: int = 10) -> list[dict]:
+def tool_top_projects(days: int = 7, limit: int = 10, *, now: datetime | None = None) -> list[dict]:
     sessions = load_all_sessions()
-    pairs = turns_in_last_days(sessions, days=days)
+    pairs = turns_in_last_days(sessions, days=days, now=now)
     return [_agg_to_dict(a) for a in aggregate_by_cwd(pairs)[:limit]]
 
 
-def tool_top_models(days: int = 7, limit: int = 10) -> list[dict]:
+def tool_top_models(days: int = 7, limit: int = 10, *, now: datetime | None = None) -> list[dict]:
     sessions = load_all_sessions()
-    pairs = turns_in_last_days(sessions, days=days)
+    pairs = turns_in_last_days(sessions, days=days, now=now)
     return [_agg_to_dict(a) for a in aggregate_by_model(pairs)[:limit]]
 
 

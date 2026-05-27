@@ -318,6 +318,19 @@ HTTP status), não vaza prompts.
 Na TUI, aba Tools (`5`): seleção de linha (↑/↓ + Enter) abre painel
 inferior com top 5 erros recentes.
 
+## Notas técnicas
+
+### Clock injetável
+
+Funções de janela temporal do `aggregator` aceitam um kwarg
+opcional `now: datetime | None = None`. Quando ausente, usa
+`datetime.now(timezone.utc)`. Quando passado, é fonte única do "agora".
+
+Habilita:
+- Testes determinísticos timezone-safe (sem `freezegun`)
+- Replay/snapshot histórico que precisa "fingir" um momento passado
+- Auditoria que reproduz cálculos de uma data específica
+
 ## Licença
 
 Privado — uso pessoal de Leonardo Menzani.
