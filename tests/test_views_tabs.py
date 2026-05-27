@@ -44,3 +44,20 @@ def test_build_today_snapshot_aggregates():
     snap = build_today_snapshot(sessions)
     assert len(snap.by_model) >= 1
     assert snap.total_credits >= 0
+
+from kiro_dash.views.tabs.models_tab import build_models_snapshot
+from kiro_dash.views.tabs.projects_tab import build_projects_snapshot
+
+
+def test_build_projects_snapshot_uses_window():
+    sessions = _two_sessions()
+    snap = build_projects_snapshot(sessions, days=7)
+    assert snap.window_days == 7
+    if len(snap.aggs) >= 2:
+        assert snap.aggs[0].credits >= snap.aggs[1].credits
+
+
+def test_build_models_snapshot_uses_window():
+    sessions = _two_sessions()
+    snap = build_models_snapshot(sessions, days=30)
+    assert snap.window_days == 30
