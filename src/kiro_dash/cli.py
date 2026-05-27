@@ -216,6 +216,41 @@ def whoami() -> None:
     console.print(Panel(table, title=title, expand=False))
 
 
+def _render_snapshot(snap: dict, *, agent: str | None = None) -> None:
+    """Renderiza snapshot JSON no mesmo formato visual do today."""
+    totals = snap["totals"]
+    d = snap["local_date"]
+
+    header = Text()
+    header.append(f"{d}  ", style="bold")
+    header.append(f"{_fmt_credits(totals['credits'])} créditos  ", style="bold green")
+    header.append(f"{totals['turns']} turns em {totals['sessions']} sessões")
+    header.append("  [snapshot]", style="dim")
+    console.print(Panel(header, title="Histórico", expand=False))
+    console.print()
+
+    if snap.get("by_model"):
+        table = Table(title="Por modelo", expand=False, header_style="bold")
+        for col in ("modelo", "créditos", "turns", "sessões", "duração", "tools"):
+            table.add_column(col, justify="right" if col != "modelo" else "left")
+        for m in snap["by_model"]:
+            table.add_row(
+                m["label"], _fmt_credits(m["credits"]), str(m["turns"]),
+                str(m["sessions"]), _fmt_duration(timedelta(seconds=m.get("duration_secs", 0))),
+                str(m.get("tool_uses", 0)),
+            )
+        console.print(table)
+
+    if snap.get("by_project"):
+        table = Table(title="Por projeto", expand=False, header_style="bold")
+        for col in ("projeto", "créditos", "turns", "sessões"):
+            table.add_column(col, justify="right" if col != "projeto" else "left")
+        for p in snap["by_project"]:
+            table.add_row(p["label"], _fmt_credits(p["credits"]),
+                          str(p["turns"]), str(p["sessions"]))
+        console.print(table)
+
+
 # ─── today ───────────────────────────────────────────────────────────────
 
 
@@ -231,7 +266,22 @@ def today(day_str: str | None, agent: str | None) -> None:
     """Agregado de créditos do dia corrente."""
     _ensure_snapshots_silently()
     d = date.fromisoformat(day_str) if day_str else datetime.now().astimezone().date()
+    today_local = datetime.now().astimezone().date()
 
+    # D-2 e anterior: lê snapshot
+    if d <= today_local - timedelta(days=2):
+        from kiro_dash.snapshots import read_snapshot
+
+        snap = read_snapshot(d)
+        if snap is None:
+            console.print(
+                f"[yellow]Sem snapshot para {d}. Tente: kiro-dash snapshot {d}[/yellow]"
+            )
+            return
+        _render_snapshot(snap, agent=agent)
+        return
+
+    # D ou D-1: path stateless (live)
     sessions = load_all_sessions()
     pairs = filter_by_agent(turns_in_local_day(sessions, d), agent)
 
