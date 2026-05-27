@@ -99,3 +99,54 @@ def test_read_merges_multiple_hosts(tmp_path, monkeypatch):
     assert merged["totals"]["sessions"] == 2
     assert "merged_from" in merged
     assert sorted(merged["merged_from"]) == ["predator", "work"]
+
+
+# ─── Task 2: ensure_snapshots_up_to ──────────────────────────────────────
+
+
+def test_ensure_snapshots_up_to_gera_dias_faltantes(tmp_path, monkeypatch):
+    """Self-healing: ensure_snapshots_up_to gera tudo que falta."""
+    from kiro_dash.snapshots import ensure_snapshots_up_to
+
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    paths = SnapshotPaths(root=tmp_path / "snaps")
+    sessions = _make_sample(date(2026, 5, 16))
+
+    created = ensure_snapshots_up_to(
+        date(2026, 5, 16),
+        sessions,
+        paths=paths,
+        host="h1",
+        now=FAKE_NOW,
+        lookback_days=7,
+    )
+    assert any("2026-05-16" in str(p) for p in created)
+
+
+def test_ensure_snapshots_up_to_idempotente(tmp_path, monkeypatch):
+    """Reexecutar não recria snapshots existentes."""
+    from kiro_dash.snapshots import ensure_snapshots_up_to
+
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    paths = SnapshotPaths(root=tmp_path / "snaps")
+    sessions = _make_sample(date(2026, 5, 16))
+
+    ensure_snapshots_up_to(date(2026, 5, 16), sessions, paths=paths, host="h1", now=FAKE_NOW)
+    created_2 = ensure_snapshots_up_to(
+        date(2026, 5, 16), sessions, paths=paths, host="h1", now=FAKE_NOW
+    )
+    assert created_2 == []
+
+
+def test_ensure_snapshots_nao_inclui_hoje_nem_ontem_se_target_eh_anteontem(tmp_path, monkeypatch):
+    """Target ``up_to=anteontem`` não cria snapshot de hoje nem de ontem."""
+    from kiro_dash.snapshots import ensure_snapshots_up_to
+
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    paths = SnapshotPaths(root=tmp_path / "snaps")
+    target = date(2026, 5, 15)
+    sessions = _make_sample(date(2026, 5, 15))
+    ensure_snapshots_up_to(target, sessions, paths=paths, host="h1", now=FAKE_NOW)
+
+    files = list(paths.root.glob("*.json"))
+    assert not any("2026-05-16" in str(p) or "2026-05-17" in str(p) for p in files)
