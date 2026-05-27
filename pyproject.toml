@@ -26,6 +26,7 @@ dependencies = [
     "rich>=13.7",
     "click>=8.1",
     "mcp>=1.0",
+    "tomli_w>=1.0",
 ]
 
 [project.optional-dependencies]
