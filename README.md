@@ -80,6 +80,52 @@ Tools expostas:
 **Privacidade:** nenhuma tool expõe conteúdo de mensagens — apenas
 metadata estrutural (mesma superfície da CLI).
 
+## Sync multi-device (Google Drive via rclone)
+
+Sincroniza apenas os `.json` de `~/.kiro/sessions/cli/` entre dispositivos —
+o painel de uma máquina passa a ver sessões da outra. **Não inclui** os
+`.jsonl` (transcripts com prompts/respostas; ficam locais).
+
+### Pré-requisitos
+
+- `rclone` instalado e remote `gdrive-pessoal` configurado (mesmo padrão do
+  `iris/sync-drive.sh`):
+  ```bash
+  sudo apt install rclone
+  rclone config   # criar remote tipo 'drive', nome 'gdrive-pessoal'
+  ```
+
+### Uso manual
+
+```bash
+kiro-dash sync push   # local → Drive
+kiro-dash sync pull   # Drive → local
+```
+
+### Uso automatizado (hook do agent Nyx)
+
+No `~/.kiro/agents/nyx.json`, em `hooks.agentSpawn`:
+
+```json
+"agentSpawn": [
+  { "command": "kiro-dash sync pull --remote gdrive-pessoal", "timeout_ms": 30000 }
+]
+```
+
+E em `hooks.stop`:
+
+```json
+"stop": [
+  { "command": "kiro-dash sync push --remote gdrive-pessoal", "timeout_ms": 30000 }
+]
+```
+
+### Privacidade
+
+- Apenas `.json` é syncado (metadata + título de sessão; sem conteúdo de mensagens)
+- `.jsonl` (transcripts) **NÃO** sai do dispositivo
+- `.lock` (estado local) **NÃO** sai do dispositivo
+
 ## Licença
 
 Privado — uso pessoal de Leonardo Menzani.
