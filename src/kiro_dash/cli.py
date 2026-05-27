@@ -392,6 +392,52 @@ def year(year_str: str | None) -> None:
     _render_period_summary(summary)
 
 
+# ─── compare ─────────────────────────────────────────────────────────────
+
+
+@main.command()
+@click.argument("a_str")
+@click.argument("b_str")
+def compare(a_str: str, b_str: str) -> None:
+    """Compara dois períodos. Aceita YYYY, YYYY-MM, today/yesterday/week/last-week/month/last-month/year/last-year."""
+    from kiro_dash.history import diff_summaries, resolve_period
+
+    a = resolve_period(a_str)
+    b = resolve_period(b_str)
+    if a is None or b is None:
+        console.print(
+            "[red]Período inválido. Use YYYY, YYYY-MM, "
+            "today/yesterday/week/last-week/month/last-month/year/last-year.[/red]"
+        )
+        raise SystemExit(2)
+
+    diff = diff_summaries(a, b)
+    table = Table(
+        title=f"{a.period_label} vs {b.period_label}",
+        expand=False, header_style="bold",
+    )
+    table.add_column("métrica")
+    table.add_column(a.period_label, justify="right")
+    table.add_column(b.period_label, justify="right")
+    table.add_column("Δ", justify="right")
+    table.add_column("%", justify="right")
+
+    for name, fa, fb, fd in [
+        ("créditos", a.credits, b.credits, diff["credits_delta"]),
+        ("turns", a.turns, b.turns, diff["turns_delta"]),
+        ("sessões", a.sessions, b.sessions, diff["sessions_delta"]),
+    ]:
+        pct_str = f"{(fd / fb) * 100:+.1f}%" if fb else "—"
+        delta_style = "green" if fd >= 0 else "red"
+        table.add_row(
+            name, _fmt_credits(fa) if isinstance(fa, float) else str(fa),
+            _fmt_credits(fb) if isinstance(fb, float) else str(fb),
+            Text(f"{fd:+.2f}" if isinstance(fd, float) else f"{fd:+}", style=delta_style),
+            pct_str,
+        )
+    console.print(table)
+
+
 # ─── session ─────────────────────────────────────────────────────────────
 
 

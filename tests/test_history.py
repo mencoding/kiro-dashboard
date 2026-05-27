@@ -98,3 +98,33 @@ def test_month_summary_agrega_by_model(tmp_path):
     assert len(summary.by_model) == 1
     assert summary.by_model[0]["label"] == "claude-opus-4.7"
     assert summary.by_model[0]["credits"] == 30
+
+
+def test_resolve_period_yyyy_mm(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    from kiro_dash.history import resolve_period
+    paths = SnapshotPaths(root=tmp_path / "kiro-dash" / "snapshots")
+    _write_fake_snapshot(paths, date(2026, 3, 10), "h1", credits=50, turns=10, sessions=5)
+
+    result = resolve_period("2026-03")
+    assert result is not None
+    assert result.period_label == "2026-03"
+    assert result.credits == 50
+
+
+def test_resolve_period_yyyy(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    from kiro_dash.history import resolve_period
+    paths = SnapshotPaths(root=tmp_path / "kiro-dash" / "snapshots")
+    _write_fake_snapshot(paths, date(2025, 6, 1), "h1", credits=100, turns=20, sessions=10)
+
+    result = resolve_period("2025")
+    assert result is not None
+    assert result.period_label == "2025"
+    assert result.credits == 100
+
+
+def test_resolve_period_invalid():
+    from kiro_dash.history import resolve_period
+    assert resolve_period("xyz") is None
+    assert resolve_period("13-2026") is None

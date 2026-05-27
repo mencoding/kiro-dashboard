@@ -4,7 +4,7 @@ from __future__ import annotations
 import calendar
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from kiro_dash.snapshots import SnapshotPaths, read_snapshot
@@ -106,3 +106,105 @@ def diff_summaries(a: PeriodSummary, b: PeriodSummary) -> dict[str, Any]:
         "days_a": a.days_with_data,
         "days_b": b.days_with_data,
     }
+
+
+def _live_day_as_period(d: date, *, label: str) -> PeriodSummary:
+    """Constrói PeriodSummary lendo turns live de um dia (D ou D-1)."""
+    from kiro_dash.aggregator import total_credits, turns_in_local_day
+    from kiro_dash.parser import load_all_sessions
+
+    sessions = load_all_sessions()
+    pairs = turns_in_local_day(sessions, d)
+    return PeriodSummary(
+        period_label=label,
+        credits=round(total_credits(pairs), 4),
+        turns=len(pairs),
+        sessions=len({s.session_id for s, _ in pairs}),
+        days_with_data=1 if pairs else 0,
+    )
+
+
+def _live_window_as_period(
+    start_day: date, *, days: int, label: str,
+) -> PeriodSummary:
+    """PeriodSummary acumulado em janela contígua (live se hoje/ontem; snapshot caso contrário)."""
+    from kiro_dash.aggregator import total_credits, turns_in_local_day
+    from kiro_dash.parser import load_all_sessions
+
+    today_local = datetime.now().astimezone().date()
+    sessions = load_all_sessions()
+
+    total_cred = 0.0
+    total_turns = 0
+    total_sessions = 0
+    days_with = 0
+
+    for offset in range(days):
+        d = start_day + timedelta(days=offset)
+        # Live para hoje e ontem; snapshot para o resto
+        if d >= today_local - timedelta(days=1):
+            pairs = turns_in_local_day(sessions, d)
+            if pairs:
+                total_cred += total_credits(pairs)
+                total_turns += len(pairs)
+                total_sessions += len({s.session_id for s, _ in pairs})
+                days_with += 1
+        else:
+            snap = read_snapshot(d)
+            if snap is not None:
+                total_cred += snap["totals"]["credits"]
+                total_turns += snap["totals"]["turns"]
+                total_sessions += snap["totals"]["sessions"]
+                days_with += 1
+
+    return PeriodSummary(
+        period_label=label,
+        credits=round(total_cred, 4),
+        turns=total_turns,
+        sessions=total_sessions,
+        days_with_data=days_with,
+    )
+
+
+def resolve_period(s: str) -> PeriodSummary | None:
+    """Converte string ('2026-05', 'today', 'week', etc.) em PeriodSummary.
+
+    Exported for use by other modules (e.g., TUI history tab).
+    """
+    s = s.strip().lower()
+    today = datetime.now().astimezone().date()
+
+    if s == "today":
+        return _live_day_as_period(today, label="hoje")
+    if s == "yesterday":
+        return _live_day_as_period(today - timedelta(days=1), label="ontem")
+    if s == "week":
+        start = today - timedelta(days=6)
+        return _live_window_as_period(start, days=7, label="última semana")
+    if s == "last-week":
+        start = today - timedelta(days=13)
+        return _live_window_as_period(start, days=7, label="semana anterior")
+    if s == "month":
+        return month_summary(today.year, today.month)
+    if s == "last-month":
+        prev = today.replace(day=1) - timedelta(days=1)
+        return month_summary(prev.year, prev.month)
+    if s == "year":
+        return year_summary(today.year)
+    if s == "last-year":
+        return year_summary(today.year - 1)
+
+    # YYYY-MM
+    if len(s) == 7 and s[4] == "-":
+        try:
+            year, m = int(s[:4]), int(s[5:])
+            if 1 <= m <= 12:
+                return month_summary(year, m)
+        except ValueError:
+            pass
+        return None
+    # YYYY
+    if len(s) == 4 and s.isdigit():
+        return year_summary(int(s))
+
+    return None
