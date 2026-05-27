@@ -43,6 +43,7 @@ from kiro_dash.config import (
     default_config_path,
     load_aliases,
     load_plan,
+    save_aliases,
     save_plan,
 )
 from kiro_dash.models import Session
@@ -644,6 +645,53 @@ def plan_set(tier: str, credits_override: int | None, cycle_start_str: str | Non
     p = PlanConfig(tier=tier, monthly_credits=monthly, cycle_start=cycle)
     save_plan(p, default_config_path())
     console.print(f"[green]Plano salvo:[/green] {p.tier} ({p.monthly_credits} cr/mês), ciclo {p.cycle_start.isoformat()}")
+
+
+# ─── aliases ──────────────────────────────────────────────────────────────
+
+
+@main.group()
+def aliases() -> None:
+    """Gestão de aliases declarativos de projeto."""
+
+
+@aliases.command("get")
+def aliases_get() -> None:
+    """Lista aliases atuais."""
+    al = load_aliases(default_config_path())
+    if not al:
+        console.print("[dim]Nenhum alias declarado.[/dim]")
+        return
+    table = Table(title="Aliases", show_header=True)
+    table.add_column("path")
+    table.add_column("label")
+    for path, label in sorted(al.items()):
+        table.add_row(path, label)
+    console.print(table)
+
+
+@aliases.command("set")
+@click.argument("path")
+@click.argument("label")
+def aliases_set(path: str, label: str) -> None:
+    """Define alias ``path → label``. Sobrescreve se já existir."""
+    al = load_aliases(default_config_path())
+    al[path] = label
+    save_aliases(al, default_config_path())
+    console.print(f"[green]Alias salvo:[/green] {path} → {label}")
+
+
+@aliases.command("unset")
+@click.argument("path")
+def aliases_unset(path: str) -> None:
+    """Remove alias por path."""
+    al = load_aliases(default_config_path())
+    if path not in al:
+        console.print(f"[yellow]Alias não encontrado: {path}[/yellow]")
+        raise SystemExit(1)
+    del al[path]
+    save_aliases(al, default_config_path())
+    console.print(f"[green]Alias removido:[/green] {path}")
 
 
 # ─── balance ──────────────────────────────────────────────────────────────
