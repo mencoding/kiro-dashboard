@@ -148,6 +148,34 @@ def test_filter_by_agent_none_passa_tudo():
 # ─── aggregate_by_agent_pair (Wave 3 hotfix v0.4.1) ────────────────────────
 
 
+def test_turns_in_local_day_aceita_now_injetado():
+    """Com `now` fixo, comportamento é totalmente determinístico."""
+    from kiro_dash.aggregator import turns_in_local_day
+
+    fake_now = datetime(2026, 5, 16, 15, 0, tzinfo=timezone.utc)
+    # 15:00 UTC - 8h = 07:00 UTC — still same local day
+    s = make_session(turns=[make_turn(end_timestamp=fake_now - timedelta(hours=8), credits=5)])
+
+    pairs = turns_in_local_day([s], now=fake_now)
+    assert len(pairs) == 1
+    assert pairs[0][1].credits == 5
+
+
+def test_turns_in_local_day_now_injetado_filtra_dia_anterior():
+    """Turn de antes da meia-noite local NÃO entra em today."""
+    from kiro_dash.aggregator import turns_in_local_day
+
+    fake_now = datetime(2026, 5, 16, 15, 0, tzinfo=timezone.utc)
+    old = fake_now - timedelta(hours=37)
+    s = make_session(turns=[make_turn(end_timestamp=old, credits=99)])
+
+    pairs = turns_in_local_day([s], now=fake_now)
+    assert pairs == []
+
+
+# ─── aggregate_by_agent_pair (Wave 3 hotfix v0.4.1) ────────────────────────
+
+
 def test_aggregate_by_agent_pair_separa_runtime_e_persona():
     """Sessão Nyx (persona) cujos turns rodam em kiro_default (runtime) → 1 entrada."""
     from kiro_dash.aggregator import aggregate_by_agent_pair

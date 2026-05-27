@@ -37,16 +37,23 @@ def _local_day_bounds(d: date) -> tuple[datetime, datetime]:
     return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
 
 
+def _resolve_now(now: datetime | None) -> datetime:
+    """Retorna ``now`` se passado, senão ``datetime.now(timezone.utc)``."""
+    return now if now is not None else datetime.now(timezone.utc)
+
+
 def turns_in_local_day(
     sessions: list[Session],
     d: date | None = None,
+    *,
+    now: datetime | None = None,
 ) -> list[tuple[Session, Turn]]:
     """Retorna pares ``(sessão, turn)`` cujo turn ocorreu no dia ``d`` local.
 
-    ``d`` default = hoje (local).
+    ``d`` default = hoje (local), derivado de ``now``.
     """
     if d is None:
-        d = datetime.now().astimezone().date()
+        d = _resolve_now(now).astimezone().date()
     start_utc, end_utc = _local_day_bounds(d)
 
     out: list[tuple[Session, Turn]] = []
