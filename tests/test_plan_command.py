@@ -62,7 +62,10 @@ def _fake_sessions_with_credits(total_credits: float):
     ])]
 
 
-def test_balance_shows_consumption_below_threshold(tmp_path):
+def test_balance_shows_consumption_below_threshold(tmp_path, monkeypatch):
+    # Wave 9: IDE backend agora lê executions reais; isolar do dev storage
+    monkeypatch.setenv("KIRO_DASH_NO_IDE_SESSIONS", "1")
+    monkeypatch.setenv("KIRO_DASH_NO_IDE_STATE", "1")
     cfg_path = tmp_path / "config.toml"
     cfg_path.write_text(
         f'[plan]\ntier = "pro+"\nmonthly_credits = 2000\n'
@@ -78,7 +81,10 @@ def test_balance_shows_consumption_below_threshold(tmp_path):
     assert "25" in result.output
 
 
-def test_balance_warns_when_above_80_pct(tmp_path):
+def test_balance_warns_when_above_80_pct(tmp_path, monkeypatch):
+    # Wave 9: IDE backend agora lê executions reais; isolar do dev storage
+    monkeypatch.setenv("KIRO_DASH_NO_IDE_SESSIONS", "1")
+    monkeypatch.setenv("KIRO_DASH_NO_IDE_STATE", "1")
     cfg_path = tmp_path / "config.toml"
     cfg_path.write_text(
         f'[plan]\ntier = "pro"\nmonthly_credits = 1000\n'

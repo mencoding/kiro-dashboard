@@ -1,6 +1,6 @@
 # kiro-dashboard
 
-[![Version](https://img.shields.io/badge/version-0.7.2-blue)](https://github.com/mencoding/kiro-dashboard/releases)
+[![Version](https://img.shields.io/badge/version-0.7.3-blue)](https://github.com/mencoding/kiro-dashboard/releases)
 [![Python](https://img.shields.io/badge/python-3.12+-blue)](https://www.python.org)
 [![License](https://img.shields.io/badge/license-Proprietary-red)](#licença)
 

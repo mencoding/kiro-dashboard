@@ -5,6 +5,49 @@ Todas as mudanças notáveis neste projeto serão documentadas aqui.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 e o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [0.7.3] - 2026-05-27
+
+Wave 9 — bug fix crítico de leitura de executions IDE.
+
+### Corrigido
+
+- **`IdeSessionBackend` ignorava executions com filename hex32
+  (T1-W9)** — a regex `_EXECUTION_ID_RE` esperava nome de arquivo
+  em formato UUID (8-4-4-4-12 com hífens), mas o Kiro IDE atual
+  salva blobs com nomes de 32 hex chars sem hífens (storage-key
+  opaca, NÃO é hash do executionId). O `executionId` dentro do
+  JSON segue UUID; só o filename mudou.
+
+  Sintoma: `kiro-dash whoami` mostrava `ide-sessions ✓ (N
+  workspaces)` mas `today`/`tools`/`recent` não viam turns IDE
+  (`list_sessions` retornava sessões com 0 turns / 0 créditos).
+
+  Fix: regex aceita ambos formatos (UUID com hífens OU 32-hex sem
+  hífens). `read_execution()` continua sendo autoridade semântica
+  (filename é só pré-filtro de I/O).
+
+  Ver [ADR-0002](docs/adr/0002-execution-blob-filename-opaque.md).
+
+### Adicionado
+
+- `tests/test_ide_filename_regex.py` (T2-W9) — 20 testes
+  regressivos: 6 filenames válidos parametrizados, 9 inválidos,
+  3 integration tests com fixtures de layout completo
+  (hex32-only, UUID-only, mix de auxiliares), 1 teste defensivo
+  contra blobs JSON inválidos.
+- `docs/adr/0002-execution-blob-filename-opaque.md` (T3-W9) —
+  documenta o finding, alternativas consideradas, sinais de
+  erosão futura.
+
+### Modificado
+
+- `tests/test_plan_command.py` e `tests/test_tools_command.py`
+  agora isolam do storage IDE real do dev via
+  `KIRO_DASH_NO_IDE_SESSIONS` + `KIRO_DASH_NO_IDE_STATE` no
+  monkeypatch. Antes do fix da regex, esses testes passavam por
+  sorte (IDE retornava 0); agora que IDE funciona corretamente,
+  o mock explícito é necessário.
+
 ## [0.7.2] - 2026-05-27
 
 Hotfix de bug crítico em v0.7.1.

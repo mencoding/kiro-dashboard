@@ -25,7 +25,10 @@ def test_tools_renders_table_when_data_available(tmp_path):
     assert "shell" in result.output
 
 
-def test_tools_empty_window_shows_message(tmp_path):
+def test_tools_empty_window_shows_message(tmp_path, monkeypatch):
+    # Isolar do storage IDE real do dev (Wave 9 fix exigiu mocking explícito)
+    monkeypatch.setenv("KIRO_DASH_NO_IDE_SESSIONS", "1")
+    monkeypatch.setenv("KIRO_DASH_NO_IDE_STATE", "1")
     with patch("kiro_dash.cli.DEFAULT_SESSIONS_DIR", tmp_path):
         runner = CliRunner()
         result = runner.invoke(main, ["tools"])

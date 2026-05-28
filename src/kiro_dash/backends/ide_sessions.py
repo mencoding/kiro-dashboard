@@ -33,11 +33,23 @@ SESSIONS_INDEX_FILENAME = "sessions.json"
 ENV_OVERRIDE_ROOT = "KIRO_DASH_IDE_SESSIONS_ROOT"
 ENV_DISABLE = "KIRO_DASH_NO_IDE_SESSIONS"
 
-# Regex para reconhecer arquivos de execution (UUID 8-4-4-4-12).
-# I7 do code review: filtrar arquivos não-execution dentro do
-# profile_hash dir para evitar I/O wasteful em arquivos auxiliares.
+# Regex para reconhecer arquivos de execution.
+#
+# I7 do code review (Wave 6/Q): filtrar arquivos não-execution dentro
+# do profile_hash dir para evitar I/O wasteful em arquivos auxiliares.
+#
+# Wave 9 (v0.7.3): aceitar dois formatos de filename:
+#   - UUID com hífens (8-4-4-4-12): formato observado em versões
+#     anteriores do Kiro IDE
+#   - 32 hex chars sem hífens: formato atual (storage-key opaca,
+#     NÃO é hash do executionId interno; o JSON dentro mantém o
+#     executionId em UUID format)
+#
+# read_execution() valida schema internamente, então a regex é só
+# pré-filtro de I/O para descartar arquivos auxiliares (catalog
+# index, profile.json, etc.) que não têm formato de UUID/hex32.
 _EXECUTION_ID_RE = re.compile(
-    r"^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+    r"^([a-f0-9]{32}|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$"
 )
 
 
