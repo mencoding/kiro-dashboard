@@ -43,7 +43,7 @@ class HelpModal(ModalScreen):
                 "[dim]ESC ou q para fechar[/dim]",
                 id="help-title",
             )
-            yield DataTable(id="help-table", show_header=True, header_style="bold")
+            yield DataTable(id="help-table", show_header=True)
             yield Static(
                 "[dim]filtro de fonte (s) afeta as abs Now/Today/Projects/"
                 "Models/Tools — não afeta Session/History.[/dim]",

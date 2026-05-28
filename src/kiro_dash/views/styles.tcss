@@ -162,6 +162,10 @@ HelpModal {
     margin-bottom: 1;
 }
 
+#help-table > .datatable--header {
+    text-style: bold;
+}
+
 #help-footer {
     width: 100%;
     height: auto;

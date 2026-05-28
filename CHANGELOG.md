@@ -5,6 +5,23 @@ Todas as mudanças notáveis neste projeto serão documentadas aqui.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 e o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [0.7.2] - 2026-05-27
+
+Hotfix de bug crítico em v0.7.1.
+
+### Corrigido
+
+- **Crash ao abrir help modal (T6-W8)** — `HelpModal` passava
+  `header_style="bold"` para o `DataTable` da Textual, que não
+  aceita esse keyword (era API do `rich.Table`). Causava
+  `TypeError: DataTable.__init__() got an unexpected keyword
+  argument 'header_style'` ao pressionar `?` na TUI. Movido
+  estilo bold do header para `styles.tcss`
+  (`#help-table > .datatable--header { text-style: bold; }`).
+- Adicionados 4 testes regressivos em `test_help_modal.py`
+  cobrindo mount, contagem de rows, dismiss via ESC e dismiss
+  via `q`.
+
 ## [0.7.1] - 2026-05-28
 
 Wave 8 — refinamentos visuais TUI/CLI. Sem mudanças de API
