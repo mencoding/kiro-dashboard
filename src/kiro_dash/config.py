@@ -30,10 +30,16 @@ class PlanConfig:
 
 
 def default_config_path() -> Path:
-    """``$XDG_CONFIG_HOME/kiro-dash/config.toml`` ou ``~/.config/kiro-dash/config.toml``."""
-    base = os.environ.get("XDG_CONFIG_HOME")
-    root = Path(base) if base else Path.home() / ".config"
-    return root / "kiro-dash" / "config.toml"
+    """Path do ``config.toml`` cross-platform (Wave 10).
+
+    - Linux: ``$XDG_CONFIG_HOME/kiro-dash/config.toml`` ou ``~/.config/kiro-dash/config.toml``
+    - Windows: ``%APPDATA%/kiro-dash/config.toml``
+    - macOS: ``~/Library/Application Support/kiro-dash/config.toml``
+
+    Override: env ``KIRO_DASH_CONFIG_DIR``.
+    """
+    from kiro_dash._platform_paths import kiro_dash_config_dir
+    return kiro_dash_config_dir() / "config.toml"
 
 
 def _today_first() -> date:

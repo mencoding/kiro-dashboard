@@ -52,8 +52,16 @@ def _detect_session_source(session_id: str) -> tuple[str, str]:
 
 
 def snapshots_dir_default() -> Path:
-    base = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
-    return Path(base) / "kiro-dash" / "snapshots"
+    """Diretório default de snapshots (cross-platform via Wave 10).
+
+    - Linux: ``$XDG_DATA_HOME/kiro-dash/snapshots`` ou ``~/.local/share/kiro-dash/snapshots``
+    - Windows: ``%LOCALAPPDATA%/kiro-dash/snapshots``
+    - macOS: ``~/Library/Application Support/kiro-dash/snapshots``
+
+    Override: env ``KIRO_DASH_DATA_DIR``.
+    """
+    from kiro_dash._platform_paths import kiro_dash_data_dir
+    return kiro_dash_data_dir() / "snapshots"
 
 
 @dataclass(frozen=True, slots=True)

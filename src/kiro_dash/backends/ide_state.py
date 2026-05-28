@@ -21,10 +21,16 @@ from pathlib import Path
 
 from kiro_dash.backends import Backend, Capability
 
-DEFAULT_IDE_STATE_VSCDB = (
-    Path.home() / ".config" / "Kiro" / "User" / "globalStorage" / "state.vscdb"
-)
-"""Caminho default do ``state.vscdb`` global do Kiro IDE."""
+from kiro_dash._platform_paths import kiro_ide_state_db_path
+
+DEFAULT_IDE_STATE_VSCDB = kiro_ide_state_db_path()
+"""Caminho default do ``state.vscdb`` global do Kiro IDE.
+
+Cross-platform via :mod:`kiro_dash._platform_paths`:
+- Linux: ``~/.config/Kiro/User/globalStorage/state.vscdb``
+- Windows: ``%APPDATA%/Kiro/User/globalStorage/state.vscdb``
+- macOS: ``~/Library/Application Support/Kiro/User/globalStorage/state.vscdb``
+"""
 
 KIRO_AGENT_KEY = "kiro.kiroAgent"
 """Chave dentro de ``ItemTable`` que carrega o JSON de uso/billing."""

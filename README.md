@@ -1,6 +1,6 @@
 # kiro-dashboard
 
-[![Version](https://img.shields.io/badge/version-0.7.3-blue)](https://github.com/mencoding/kiro-dashboard/releases)
+[![Version](https://img.shields.io/badge/version-0.8.0-blue)](https://github.com/mencoding/kiro-dashboard/releases)
 [![Python](https://img.shields.io/badge/python-3.12+-blue)](https://www.python.org)
 [![License](https://img.shields.io/badge/license-Proprietary-red)](#licença)
 
@@ -18,6 +18,8 @@ Inspirado no [`claude-dashboard`](https://github.com/mencoding/claude-dashboard)
 - [Motivação](#motivação)
 - [Privacidade](#privacidade)
 - [Instalação](#instalação)
+  - [Windows 11](#windows-11)
+  - [MCP no Kiro IDE (Windows e Linux)](#mcp-no-kiro-ide-windows-e-linux)
 - [Início rápido](#início-rápido)
 - [Comandos](#comandos)
   - [Identidade e conta](#identidade-e-conta)
@@ -71,7 +73,7 @@ pipx install git+https://github.com/mencoding/kiro-dashboard.git
 Ou versão fixa:
 
 ```bash
-pipx install git+https://github.com/mencoding/kiro-dashboard.git@v0.6.1
+pipx install git+https://github.com/mencoding/kiro-dashboard.git@v0.8.0
 ```
 
 3 binários globais ficam disponíveis:
@@ -82,9 +84,78 @@ pipx install git+https://github.com/mencoding/kiro-dashboard.git@v0.6.1
 
 **Pré-requisitos:**
 
-- Python 3.12+
-- Kiro CLI já em uso (com sessões em `~/.kiro/sessions/cli/`)
+- Python 3.12+ (Linux/macOS) ou 3.10+ (Windows)
+- Kiro CLI ou Kiro IDE já em uso
 - Para sync opcional: `rclone` configurado
+
+### Windows 11
+
+A v0.8.0 introduziu suporte cross-platform completo (paths Linux/Windows/
+macOS resolvidos automaticamente). Para instalar em Windows 11 sem
+exigir Python pré-instalado, use o script PowerShell:
+
+```powershell
+# One-liner (PowerShell):
+iwr -useb https://raw.githubusercontent.com/mencoding/kiro-dashboard/main/scripts/install.ps1 | iex
+```
+
+Ou clone e execute localmente:
+
+```powershell
+git clone https://github.com/mencoding/kiro-dashboard.git
+cd kiro-dashboard
+.\scripts\install.ps1
+```
+
+**O que o script faz** (idempotente — pode re-executar):
+
+1. Detecta Python 3.10+ no PATH; instala via `winget install Python.Python.3.13` se ausente.
+2. Instala `pipx` no escopo do usuário (sem admin).
+3. Adiciona o `Scripts/` do user-site ao PATH do usuário.
+4. Instala `kiro-dash` via `pipx install git+https://github.com/...`.
+5. Verifica `kiro-dash --version` e imprime instruções MCP.
+
+**Parâmetros:**
+
+```powershell
+.\scripts\install.ps1 -Version v0.8.0    # tag específica
+.\scripts\install.ps1 -Force              # reinstala mesmo se presente
+$env:KIRO_DASH_LOCAL_PATH = "C:\path\to\clone"
+.\scripts\install.ps1 -Local              # instala de path local
+```
+
+**Paths cross-platform** (resolvidos automaticamente):
+
+| Recurso              | Linux                                        | Windows 11                              |
+|----------------------|----------------------------------------------|------------------------------------------|
+| Kiro IDE state.vscdb | `~/.config/Kiro/User/globalStorage/`         | `%APPDATA%\Kiro\User\globalStorage\`     |
+| Kiro IDE sessions    | idem `kiro.kiroagent/`                       | idem `kiro.kiroagent\`                   |
+| Kiro CLI sessions    | `~/.kiro/sessions/cli/`                      | `%USERPROFILE%\.kiro\sessions\cli\`      |
+| kiro-dash config     | `~/.config/kiro-dash/`                       | `%APPDATA%\kiro-dash\`                   |
+| kiro-dash snapshots  | `~/.local/share/kiro-dash/snapshots/`        | `%LOCALAPPDATA%\kiro-dash\snapshots\`    |
+
+Override via env: `KIRO_DASH_IDE_SESSIONS_ROOT`, `KIRO_DASH_CONFIG_DIR`,
+`KIRO_DASH_DATA_DIR`.
+
+### MCP no Kiro IDE (Windows e Linux)
+
+Edite o agent em `%USERPROFILE%\.kiro\agents\<seu-agent>.json` (Windows)
+ou `~/.kiro/agents/<seu-agent>.json` (Linux):
+
+```json
+{
+  "mcpServers": {
+    "kiro-dash": {
+      "command": "kiro-dash-mcp",
+      "timeout_ms": 30000
+    }
+  }
+}
+```
+
+Reinicie o Kiro IDE. As tools `usage_state`, `today_summary`,
+`active_sessions`, `session_details`, `top_models`, `top_projects`,
+`account_info` ficam disponíveis ao agente.
 
 ## Início rápido
 

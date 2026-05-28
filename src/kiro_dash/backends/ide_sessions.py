@@ -20,11 +20,16 @@ from typing import Any, Iterator
 from kiro_dash.backends import Backend, Capability
 from kiro_dash.backends.workspace_codec import decode
 
+from kiro_dash._platform_paths import kiro_ide_kiroagent_dir
+
 # ── Constantes (caminhos default) ───────────────────────────────────
 
-DEFAULT_IDE_SESSIONS_ROOT = (
-    Path.home() / ".config" / "Kiro" / "User" / "globalStorage" / "kiro.kiroagent"
-)
+DEFAULT_IDE_SESSIONS_ROOT = kiro_ide_kiroagent_dir()
+"""Cross-platform via :mod:`kiro_dash._platform_paths`:
+- Linux: ``~/.config/Kiro/User/globalStorage/kiro.kiroagent``
+- Windows: ``%APPDATA%/Kiro/User/globalStorage/kiro.kiroagent``
+- macOS: ``~/Library/Application Support/Kiro/User/globalStorage/kiro.kiroagent``
+"""
 WORKSPACE_SESSIONS_SUBDIR = "workspace-sessions"
 EXECUTIONS_CATALOG_FILENAME = "f62de366d0006e17ea00a01f6624aabf"
 SESSIONS_INDEX_FILENAME = "sessions.json"

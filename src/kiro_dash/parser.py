@@ -21,7 +21,14 @@ from pathlib import Path
 from kiro_dash.cache import sessions_cache
 from kiro_dash.models import LockInfo, Session, Turn
 
-DEFAULT_SESSIONS_DIR = Path.home() / ".kiro" / "sessions" / "cli"
+from kiro_dash._platform_paths import kiro_cli_sessions_dir
+
+DEFAULT_SESSIONS_DIR = kiro_cli_sessions_dir()
+"""``~/.kiro/sessions/cli`` cross-platform.
+
+O kiro-cli usa convenção dotfiles em qualquer OS — não diverge por
+plataforma. Importado de :mod:`kiro_dash._platform_paths`.
+"""
 
 
 def _parse_iso(value: str | None) -> datetime | None:

@@ -5,6 +5,55 @@ Todas as mudanças notáveis neste projeto serão documentadas aqui.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 e o projeto adere a [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
+## [0.8.0] - 2026-05-27
+
+Wave 10 — suporte a Windows 11 (TUI + MCP). Minor bump por
+introdução de feature transversal.
+
+### Adicionado
+
+- **Cross-platform paths (T1-W10)** —
+  `src/kiro_dash/_platform_paths.py` com 8 helpers que resolvem
+  paths corretos por OS:
+  - Linux: `$XDG_CONFIG_HOME` ou `~/.config/`,
+    `$XDG_DATA_HOME` ou `~/.local/share/`
+  - Windows: `%APPDATA%` (Roaming) e `%LOCALAPPDATA%` (Local)
+  - macOS: `~/Library/Application Support/`
+  Helpers cobrem Kiro IDE storage, kiro-cli sessions e
+  kiro-dash own dirs. Env vars de override
+  (`KIRO_DASH_IDE_SESSIONS_ROOT`, `KIRO_DASH_CONFIG_DIR`,
+  `KIRO_DASH_DATA_DIR`) preservados.
+- **Script PowerShell de instalação (T3-W10)** —
+  `scripts/install.ps1` com 5 steps idempotentes: detecta
+  Python 3.10+ (winget instala Python 3.13 se ausente),
+  instala pipx --user, adiciona Scripts/ ao PATH user, instala
+  kiro-dash via pipx, verifica e imprime instruções MCP.
+  Parâmetros: `-Version <tag>`, `-Force`, `-Local`.
+  One-liner: `iwr -useb <url>/scripts/install.ps1 | iex`.
+- **Documentação Windows no README (T4+T5-W10)** — seção
+  "Windows 11" com tabela de paths por OS, exemplo de
+  configuração MCP em `%USERPROFILE%\.kiro\agents` (Win) e
+  `~/.kiro/agents` (Linux), env vars de override.
+- **31 testes parametrizados por OS** —
+  `tests/test_platform_paths.py` cobre Linux/Windows/macOS
+  via mock de `sys.platform`. Garante divergência de paths e
+  igualdade do dotfile dir (`~/.kiro/`).
+
+### Modificado
+
+- 5 pontos hardcoded refatorados para usar `_platform_paths`:
+  `ide_state.DEFAULT_IDE_STATE_VSCDB`,
+  `ide_sessions.DEFAULT_IDE_SESSIONS_ROOT`,
+  `parser.DEFAULT_SESSIONS_DIR`, `config.default_config_path`,
+  `snapshots.snapshots_dir_default`.
+
+### Diferido para Wave 11 (futuro)
+
+- Atalho de Start Menu via PowerShell (após validar UX em Win11).
+- Validação E2E em máquina Windows real (atualmente só via
+  mock de `sys.platform`).
+- Suporte a binário standalone (.exe via PyInstaller).
+
 ## [0.7.3] - 2026-05-27
 
 Wave 9 — bug fix crítico de leitura de executions IDE.
